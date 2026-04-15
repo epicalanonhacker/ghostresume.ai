@@ -317,6 +317,227 @@ async def get_session(session_id: str):
         return json.load(f)
 
 
+class DocumentRequest(BaseModel):
+    type: str  # "resume" or "cover_letter"
+    format: str  # "pdf" or "docx"
+    data: dict  # the tailored_resume or cover_letter object from results
+    company: str = "Company"
+    role: str = "Role"
+
+
+def _build_resume_docx(data: dict, filepath: str):
+    """Generate a professional DOCX resume."""
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+
+    doc = DocxDocument()
+    for section in doc.sections:
+        section.top_margin = Inches(0.6)
+        section.bottom_margin = Inches(0.6)
+        section.left_margin = Inches(0.75)
+        section.right_margin = Inches(0.75)
+
+    style = doc.styles['Normal']
+    style.font.name = 'Calibri'
+    style.font.size = Pt(10.5)
+    style.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+
+    # Summary
+    summary = data.get("summary", "")
+    if summary:
+        p = doc.add_paragraph()
+        run = p.add_run("PROFESSIONAL SUMMARY")
+        run.bold = True
+        run.font.size = Pt(11)
+        pPr = p._p.get_or_add_pPr()
+        pBdr = pPr.makeelement(qn('w:pBdr'), {})
+        bottom = pBdr.makeelement(qn('w:bottom'), {qn('w:val'): 'single', qn('w:sz'): '4', qn('w:space'): '1', qn('w:color'): '999999'})
+        pBdr.append(bottom)
+        pPr.append(pBdr)
+        sp = doc.add_paragraph(summary)
+        sp.space_after = Pt(6)
+
+    # Sections
+    for section in data.get("sections", []):
+        p = doc.add_paragraph()
+        run = p.add_run((section.get("name", "")).upper())
+        run.bold = True
+        run.font.size = Pt(11)
+        p.space_before = Pt(8)
+        pPr = p._p.get_or_add_pPr()
+        pBdr = pPr.makeelement(qn('w:pBdr'), {})
+        bottom = pBdr.makeelement(qn('w:bottom'), {qn('w:val'): 'single', qn('w:sz'): '4', qn('w:space'): '1', qn('w:color'): '999999'})
+        pBdr.append(bottom)
+        pPr.append(pBdr)
+
+        for entry in section.get("entries", []):
+            ep = doc.add_paragraph()
+            run_title = ep.add_run(entry.get("title", ""))
+            run_title.bold = True
+            run_title.font.size = Pt(10.5)
+            if entry.get("company"):
+                ep.add_run(f" — {entry['company']}")
+            if entry.get("dates"):
+                dr = ep.add_run(f"  |  {entry['dates']}")
+                dr.font.size = Pt(9.5)
+                dr.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+            ep.space_after = Pt(2)
+
+            for bullet in entry.get("bullets", []):
+                bp = doc.add_paragraph(style='List Bullet')
+                bp.text = bullet
+                bp.paragraph_format.left_indent = Inches(0.3)
+                bp.paragraph_format.space_after = Pt(1)
+
+    # Skills
+    skills = data.get("skills", [])
+    if skills:
+        p = doc.add_paragraph()
+        run = p.add_run("SKILLS")
+        run.bold = True
+        run.font.size = Pt(11)
+        p.space_before = Pt(8)
+        pPr = p._p.get_or_add_pPr()
+        pBdr = pPr.makeelement(qn('w:pBdr'), {})
+        bottom = pBdr.makeelement(qn('w:bottom'), {qn('w:val'): 'single', qn('w:sz'): '4', qn('w:space'): '1', qn('w:color'): '999999'})
+        pBdr.append(bottom)
+        pPr.append(pBdr)
+        doc.add_paragraph(" | ".join(skills))
+
+    doc.save(filepath)
+
+
+def _build_resume_pdf(data: dict, filepath: str):
+    """Generate a professional PDF resume."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+
+    doc = SimpleDocTemplate(filepath, pagesize=letter,
+                            topMargin=0.5*inch, bottomMargin=0.5*inch,
+                            leftMargin=0.65*inch, rightMargin=0.65*inch)
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='SHead', fontName='Helvetica-Bold', fontSize=10, spaceBefore=10, spaceAfter=3, textColor=HexColor('#1a1a1a')))
+    styles.add(ParagraphStyle(name='EntryTitle', fontName='Helvetica-Bold', fontSize=10, spaceAfter=1, textColor=HexColor('#333333')))
+    styles.add(ParagraphStyle(name='EntryDate', fontName='Helvetica', fontSize=8.5, textColor=HexColor('#666666'), spaceAfter=2))
+    styles.add(ParagraphStyle(name='ResBullet', fontName='Helvetica', fontSize=9.5, leftIndent=14, spaceAfter=2, textColor=HexColor('#333333'), bulletFontName='Helvetica', bulletFontSize=9.5, bulletIndent=0))
+    styles.add(ParagraphStyle(name='Sum', fontName='Helvetica', fontSize=9.5, spaceAfter=6, textColor=HexColor('#333333')))
+    styles.add(ParagraphStyle(name='Skl', fontName='Helvetica', fontSize=9.5, spaceAfter=4, textColor=HexColor('#333333')))
+
+    story = []
+    hr = lambda: HRFlowable(width="100%", thickness=0.3, color=HexColor('#999999'), spaceAfter=4)
+
+    summary = data.get("summary", "")
+    if summary:
+        story.append(Paragraph("PROFESSIONAL SUMMARY", styles['SHead']))
+        story.append(hr())
+        story.append(Paragraph(summary, styles['Sum']))
+
+    for section in data.get("sections", []):
+        story.append(Paragraph((section.get("name", "")).upper(), styles['SHead']))
+        story.append(hr())
+        for entry in section.get("entries", []):
+            title = f"<b>{entry.get('title', '')}</b>"
+            if entry.get("company"):
+                title += f" — {entry['company']}"
+            story.append(Paragraph(title, styles['EntryTitle']))
+            if entry.get("dates"):
+                story.append(Paragraph(entry["dates"], styles['EntryDate']))
+            for bullet in entry.get("bullets", []):
+                safe = bullet.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                story.append(Paragraph(f"• {safe}", styles['ResBullet']))
+            story.append(Spacer(1, 4))
+
+    skills = data.get("skills", [])
+    if skills:
+        story.append(Paragraph("SKILLS", styles['SHead']))
+        story.append(hr())
+        story.append(Paragraph(" | ".join(skills), styles['Skl']))
+
+    doc.build(story)
+
+
+def _build_cover_letter_docx(data: dict, filepath: str):
+    """Generate cover letter as DOCX."""
+    from docx.shared import Pt, Inches
+    doc = DocxDocument()
+    for section in doc.sections:
+        section.top_margin = Inches(1)
+        section.bottom_margin = Inches(1)
+        section.left_margin = Inches(1)
+        section.right_margin = Inches(1)
+    style = doc.styles['Normal']
+    style.font.name = 'Calibri'
+    style.font.size = Pt(11)
+
+    full_text = data.get("full_text", "")
+    for para in full_text.split("\n\n"):
+        if para.strip():
+            doc.add_paragraph(para.strip())
+    doc.save(filepath)
+
+
+def _build_cover_letter_pdf(data: dict, filepath: str):
+    """Generate cover letter as PDF."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+
+    doc = SimpleDocTemplate(filepath, pagesize=letter,
+                            topMargin=1*inch, bottomMargin=1*inch,
+                            leftMargin=1*inch, rightMargin=1*inch)
+    styles = getSampleStyleSheet()
+    story = []
+    full_text = data.get("full_text", "")
+    for para in full_text.split("\n\n"):
+        if para.strip():
+            safe = para.strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            story.append(Paragraph(safe, styles['Normal']))
+            story.append(Spacer(1, 12))
+    doc.build(story)
+
+
+@app.post("/api/generate-document")
+async def generate_document(request: DocumentRequest):
+    """Generate a PDF or DOCX from tailored resume or cover letter data."""
+    safe_company = "".join(c for c in request.company if c.isalnum() or c in (' ', '-', '_')).strip().replace(" ", "_")
+    safe_role = "".join(c for c in request.role if c.isalnum() or c in (' ', '-', '_')).strip().replace(" ", "_")
+
+    ext = request.format.lower()
+    if ext not in ("pdf", "docx"):
+        raise HTTPException(400, "Format must be 'pdf' or 'docx'")
+
+    prefix = "Resume" if request.type == "resume" else "CoverLetter"
+    filename = f"{prefix}_{safe_company}_{safe_role}.{ext}"
+    filepath = OUTPUT_DIR / filename
+
+    try:
+        if request.type == "resume":
+            if ext == "pdf":
+                _build_resume_pdf(request.data, str(filepath))
+            else:
+                _build_resume_docx(request.data, str(filepath))
+        elif request.type == "cover_letter":
+            if ext == "pdf":
+                _build_cover_letter_pdf(request.data, str(filepath))
+            else:
+                _build_cover_letter_docx(request.data, str(filepath))
+        else:
+            raise HTTPException(400, "Type must be 'resume' or 'cover_letter'")
+    except Exception as e:
+        raise HTTPException(500, f"Document generation failed: {str(e)}")
+
+    return FileResponse(
+        path=str(filepath),
+        filename=filename,
+        media_type="application/pdf" if ext == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+
 @app.get("/health")
 async def health():
     return {

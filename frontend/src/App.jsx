@@ -86,6 +86,28 @@ async function runBackendPipeline(resumeText, jobInput, jobIsUrl) {
   return res.json();
 }
 
+async function downloadDocument(type, format, data, company, role) {
+  try {
+    const res = await fetch(`${API_BASE}/api/generate-document`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, format, data, company, role }),
+    });
+    if (!res.ok) throw new Error("Download failed");
+    const blob = await res.blob();
+    const prefix = type === "resume" ? "Resume" : "CoverLetter";
+    const safeCo = (company || "Company").replace(/[^a-zA-Z0-9]/g, "_");
+    const safeRole = (role || "Role").replace(/[^a-zA-Z0-9]/g, "_");
+    const filename = `${prefix}_${safeCo}_${safeRole}.${format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert("Download failed: " + err.message);
+  }
+}
+
 function dlText(content, filename) {
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -147,6 +169,7 @@ export default function GhostResumeApp() {
   const [resumeText, setResumeText] = useState("");
   const [resumeFileName, setResumeFileName] = useState("");
   const [resumeFile, setResumeFile] = useState(null);
+  const [uploadFormat, setUploadFormat] = useState("txt");
   const [jobUrl, setJobUrl] = useState("");
   const [jobText, setJobText] = useState("");
   const [currentStep, setCurrentStep] = useState(0);
@@ -161,7 +184,11 @@ export default function GhostResumeApp() {
     if (!file) return;
     setResumeFileName(file.name);
     setResumeFile(file);
-    if (file.name.endsWith(".txt") || file.name.endsWith(".md")) {
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (ext === "pdf") setUploadFormat("pdf");
+    else if (ext === "docx" || ext === "doc") setUploadFormat("docx");
+    else setUploadFormat("txt");
+    if (ext === "txt" || ext === "md") {
       const reader = new FileReader();
       reader.onload = (e) => setResumeText(e.target.result);
       reader.readAsText(file);
@@ -204,7 +231,7 @@ export default function GhostResumeApp() {
 
   const resetAll = () => {
     setScreen("upload"); setResults(null); setResumeText(""); setResumeFileName("");
-    setResumeFile(null); setJobUrl(""); setJobText(""); setActiveTab("resume");
+    setResumeFile(null); setUploadFormat("txt"); setJobUrl(""); setJobText(""); setActiveTab("resume");
   };
 
   useEffect(() => {
@@ -391,7 +418,18 @@ export default function GhostResumeApp() {
 
             {activeTab === "resume" && r.tailored_resume && (<div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "16px" }}>
-                <DlBtn onClick={() => dlText(fmtResume(r), `Resume_${s}.txt`)}>Download Resume</DlBtn>
+                {uploadFormat === "txt" ? (
+                  <DlBtn onClick={() => dlText(fmtResume(r), `Resume_${s}.txt`)}>Download as TXT</DlBtn>
+                ) : (
+                  <>
+                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat, r.tailored_resume, r.company, r.role)}>
+                      Download as {uploadFormat.toUpperCase()}
+                    </DlBtn>
+                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat === "pdf" ? "docx" : "pdf", r.tailored_resume, r.company, r.role)}>
+                      Also as {uploadFormat === "pdf" ? "DOCX" : "PDF"}
+                    </DlBtn>
+                  </>
+                )}
               </div>
               <div style={{ background: BG, borderRadius: "8px", padding: "24px", border: `1px solid ${BORDER}` }}>
                 <p style={{ fontSize: "14px", lineHeight: 1.7, color: TEXT, margin: "0 0 20px", fontStyle: "italic" }}>{r.tailored_resume.summary}</p>
@@ -414,7 +452,18 @@ export default function GhostResumeApp() {
 
             {activeTab === "cover" && r.cover_letter && (<div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "16px" }}>
-                <DlBtn onClick={() => dlText(r.cover_letter.full_text || "", `CoverLetter_${s}.txt`)}>Download Cover Letter</DlBtn>
+                {uploadFormat === "txt" ? (
+                  <DlBtn onClick={() => dlText(r.cover_letter.full_text || "", `CoverLetter_${s}.txt`)}>Download as TXT</DlBtn>
+                ) : (
+                  <>
+                    <DlBtn onClick={() => downloadDocument("cover_letter", uploadFormat, r.cover_letter, r.company, r.role)}>
+                      Download as {uploadFormat.toUpperCase()}
+                    </DlBtn>
+                    <DlBtn onClick={() => downloadDocument("cover_letter", uploadFormat === "pdf" ? "docx" : "pdf", r.cover_letter, r.company, r.role)}>
+                      Also as {uploadFormat === "pdf" ? "DOCX" : "PDF"}
+                    </DlBtn>
+                  </>
+                )}
               </div>
               {r.cover_letter.original_first_line && (<div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "8px", padding: "12px 16px", marginBottom: "16px" }}>
                 <div style={{ fontSize: "11px", fontWeight: 600, color: DANGER, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Original opening (replaced)</div>
