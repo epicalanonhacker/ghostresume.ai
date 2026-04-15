@@ -92,12 +92,121 @@ async function runBackendPipeline(resumeText, jobInput) {
   return res.json();
 }
 
+function downloadFile(content, filename) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function formatResumeText(r, company, role) {
+  const res = r.tailored_resume;
+  if (!res) return "";
+  const lines = [];
+  const contact = r.contact || {};
+  lines.push(contact.name || "");
+  lines.push([contact.location, contact.email, contact.phone, contact.linkedin].filter(Boolean).join(" | "));
+  lines.push("");
+  lines.push("=".repeat(60));
+  lines.push("PROFESSIONAL SUMMARY");
+  lines.push("=".repeat(60));
+  lines.push(res.summary || "");
+  lines.push("");
+  for (const section of (res.sections || [])) {
+    lines.push("=".repeat(60));
+    lines.push((section.name || "").toUpperCase());
+    lines.push("=".repeat(60));
+    for (const entry of (section.entries || [])) {
+      lines.push("");
+      lines.push(`${entry.title || ""}${entry.company ? " — " + entry.company : ""}${entry.dates ? "  |  " + entry.dates : ""}`);
+      for (const bullet of (entry.bullets || [])) {
+        lines.push(`  • ${bullet}`);
+      }
+    }
+    lines.push("");
+  }
+  if (res.skills && res.skills.length) {
+    lines.push("=".repeat(60));
+    lines.push("SKILLS");
+    lines.push("=".repeat(60));
+    lines.push(res.skills.join("  |  "));
+  }
+  return lines.join("\n");
+}
+
+function formatInterviewPrepText(prep, company, role) {
+  if (!prep) return "";
+  const lines = [];
+  lines.push(`INTERVIEW PREP — ${role} at ${company}`);
+  lines.push("=".repeat(60));
+  lines.push("");
+  if (prep.two_min_pitch) {
+    lines.push("YOUR 2-MINUTE PITCH");
+    lines.push("-".repeat(40));
+    lines.push(prep.two_min_pitch);
+    lines.push("");
+  }
+  if (prep.gap_questions?.length) {
+    lines.push("GAP QUESTIONS");
+    lines.push("-".repeat(40));
+    for (const gq of prep.gap_questions) {
+      lines.push(`Q: ${gq.question}`);
+      lines.push(`A: ${gq.answer}`);
+      lines.push("");
+    }
+  }
+  if (prep.behavioral_stars?.length) {
+    lines.push("BEHAVIORAL STAR STORIES");
+    lines.push("-".repeat(40));
+    for (const bs of prep.behavioral_stars) {
+      lines.push(`Q: ${bs.question}`);
+      lines.push(`  S: ${bs.situation}`);
+      lines.push(`  T: ${bs.task}`);
+      lines.push(`  A: ${bs.action}`);
+      lines.push(`  R: ${bs.result}`);
+      lines.push("");
+    }
+  }
+  if (prep.technical_questions?.length) {
+    lines.push("TECHNICAL QUESTIONS");
+    lines.push("-".repeat(40));
+    for (const tq of prep.technical_questions) {
+      lines.push(`Q: ${tq.question}`);
+      lines.push(`A: ${tq.answer}`);
+      lines.push("");
+    }
+  }
+  if (prep.questions_to_ask?.length) {
+    lines.push("QUESTIONS TO ASK THEM");
+    lines.push("-".repeat(40));
+    for (const qa of prep.questions_to_ask) {
+      lines.push(`Q: ${qa.question}`);
+      lines.push(`   Why: ${qa.why}`);
+      lines.push("");
+    }
+  }
+  if (prep.salary) {
+    lines.push("SALARY NEGOTIATION");
+    lines.push("-".repeat(40));
+    lines.push(`Floor: ${prep.salary.floor}`);
+    lines.push(`Target: ${prep.salary.target}`);
+    lines.push(`Stretch: ${prep.salary.stretch}`);
+  }
+  return lines.join("\n");
+}
+
 export default function GhostResumeApp() {
   const [screen, setScreen] = useState("upload");
   const [resumeText, setResumeText] = useState("");
   const [resumeFileName, setResumeFileName] = useState("");
   const [jobInput, setJobInput] = useState("");
   const [currentStep, setCurrentStep] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
   const [results, setResults] = useState(null);
   const [activeTab, setActiveTab] = useState("resume");
   const [error, setError] = useState("");
@@ -131,12 +240,17 @@ export default function GhostResumeApp() {
     setError("");
     setScreen("processing");
     setCurrentStep(0);
+    setElapsed(0);
 
     let stepInterval;
+    let timerInterval;
     try {
       stepInterval = setInterval(() => {
         setCurrentStep(prev => Math.min(prev + 1, PIPELINE_STEPS.length - 1));
       }, 3000);
+      timerInterval = setInterval(() => {
+        setElapsed(prev => prev + 1);
+      }, 1000);
 
       // Step 1: If we have a file (PDF/DOCX), upload it to extract text
       let finalResumeText = resumeText;
@@ -149,11 +263,13 @@ export default function GhostResumeApp() {
       const parsed = await runBackendPipeline(finalResumeText, jobInput);
 
       clearInterval(stepInterval);
+      clearInterval(timerInterval);
       setResults(parsed);
       setCurrentStep(PIPELINE_STEPS.length);
       setTimeout(() => setScreen("results"), 800);
     } catch (err) {
       if (stepInterval) clearInterval(stepInterval);
+      if (timerInterval) clearInterval(timerInterval);
       setError(`Pipeline error: ${err.message}`);
       setScreen("upload");
     }
@@ -362,7 +478,10 @@ export default function GhostResumeApp() {
         <div style={{ textAlign: "center", position: "relative", padding: "24px" }}>
           <Ghost size={48} color={ACCENT} strokeWidth={1.5} style={{ marginBottom: "24px", opacity: 0.8 }} />
           <h2 style={{ margin: "0 0 8px", fontSize: "22px", fontWeight: 700 }}>Building your ghost resume...</h2>
-          <p style={{ margin: "0 0 40px", color: MUTED, fontSize: "14px" }}>This takes about 30 seconds</p>
+          <p style={{ margin: "0 0 8px", color: MUTED, fontSize: "14px" }}>This typically takes 30–60 seconds</p>
+          <p style={{ margin: "0 0 40px", fontFamily: "'Space Mono', monospace", fontSize: "20px", color: ACCENT, fontWeight: 700 }}>
+            {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
+          </p>
 
           <div style={{ maxWidth: "400px", margin: "0 auto", textAlign: "left" }}>
             {PIPELINE_STEPS.map((step, i) => {
@@ -471,6 +590,12 @@ export default function GhostResumeApp() {
             {/* RESUME TAB */}
             {activeTab === "resume" && r.tailored_resume && (
               <div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "16px" }}>
+                  <button onClick={() => downloadFile(formatResumeText(r, r.company, r.role), `Resume_${(r.company||"").replace(/\s/g,"_")}_${(r.role||"").replace(/\s/g,"_")}.txt`)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 16px", border: `1px solid ${BORDER}`, borderRadius: "6px", background: CARD, color: ACCENT, fontSize: "13px", fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>
+                    <Download size={14} /> Download Resume
+                  </button>
+                </div>
                 <div style={{ background: BG, borderRadius: "8px", padding: "24px", border: `1px solid ${BORDER}` }}>
                   <p style={{ fontSize: "14px", lineHeight: 1.7, color: TEXT, margin: "0 0 20px", fontStyle: "italic" }}>
                     {r.tailored_resume.summary}
@@ -511,6 +636,12 @@ export default function GhostResumeApp() {
             {/* COVER LETTER TAB */}
             {activeTab === "cover" && r.cover_letter && (
               <div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "16px" }}>
+                  <button onClick={() => downloadFile(r.cover_letter.full_text || "", `CoverLetter_${(r.company||"").replace(/\s/g,"_")}_${(r.role||"").replace(/\s/g,"_")}.txt`)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 16px", border: `1px solid ${BORDER}`, borderRadius: "6px", background: CARD, color: ACCENT, fontSize: "13px", fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>
+                    <Download size={14} /> Download Cover Letter
+                  </button>
+                </div>
                 {r.cover_letter.original_first_line && (
                   <div style={{ background: "rgba(239,68,68,0.08)", border: `1px solid rgba(239,68,68,0.2)`, borderRadius: "8px", padding: "12px 16px", marginBottom: "16px" }}>
                     <div style={{ fontSize: "11px", fontWeight: 600, color: DANGER, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Original opening (replaced)</div>
@@ -532,6 +663,12 @@ export default function GhostResumeApp() {
             {/* INTERVIEW PREP TAB */}
             {activeTab === "interview" && r.interview_prep && (
               <div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "16px" }}>
+                  <button onClick={() => downloadFile(formatInterviewPrepText(r.interview_prep, r.company, r.role), `InterviewPrep_${(r.company||"").replace(/\s/g,"_")}_${(r.role||"").replace(/\s/g,"_")}.txt`)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 16px", border: `1px solid ${BORDER}`, borderRadius: "6px", background: CARD, color: ACCENT, fontSize: "13px", fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>
+                    <Download size={14} /> Download Interview Prep
+                  </button>
+                </div>
                 {r.interview_prep.two_min_pitch && (
                   <div style={{ marginBottom: "24px" }}>
                     <h3 style={{ fontSize: "14px", fontWeight: 700, color: ACCENT, marginBottom: "8px" }}>Your 2-Minute Pitch</h3>
