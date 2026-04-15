@@ -86,12 +86,14 @@ async function runBackendPipeline(resumeText, jobInput, jobIsUrl) {
   return res.json();
 }
 
-async function downloadDocument(type, format, data, company, role) {
+async function downloadDocument(type, format, data, company, role, contact) {
   try {
+    // Inject contact into data so the backend doc generators can use it
+    const enrichedData = { ...data, _contact: contact || {} };
     const res = await fetch(`${API_BASE}/api/generate-document`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, format, data, company, role }),
+      body: JSON.stringify({ type, format, data: enrichedData, company, role }),
     });
     if (!res.ok) throw new Error("Download failed");
     const blob = await res.blob();
@@ -422,10 +424,10 @@ export default function GhostResumeApp() {
                   <DlBtn onClick={() => dlText(fmtResume(r), `Resume_${s}.txt`)}>Download as TXT</DlBtn>
                 ) : (
                   <>
-                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat, r.tailored_resume, r.company, r.role)}>
+                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat, r.tailored_resume, r.company, r.role, r.contact)}>
                       Download as {uploadFormat.toUpperCase()}
                     </DlBtn>
-                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat === "pdf" ? "docx" : "pdf", r.tailored_resume, r.company, r.role)}>
+                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat === "pdf" ? "docx" : "pdf", r.tailored_resume, r.company, r.role, r.contact)}>
                       Also as {uploadFormat === "pdf" ? "DOCX" : "PDF"}
                     </DlBtn>
                   </>
@@ -456,10 +458,10 @@ export default function GhostResumeApp() {
                   <DlBtn onClick={() => dlText(r.cover_letter.full_text || "", `CoverLetter_${s}.txt`)}>Download as TXT</DlBtn>
                 ) : (
                   <>
-                    <DlBtn onClick={() => downloadDocument("cover_letter", uploadFormat, r.cover_letter, r.company, r.role)}>
+                    <DlBtn onClick={() => downloadDocument("cover_letter", uploadFormat, r.cover_letter, r.company, r.role, r.contact)}>
                       Download as {uploadFormat.toUpperCase()}
                     </DlBtn>
-                    <DlBtn onClick={() => downloadDocument("cover_letter", uploadFormat === "pdf" ? "docx" : "pdf", r.cover_letter, r.company, r.role)}>
+                    <DlBtn onClick={() => downloadDocument("cover_letter", uploadFormat === "pdf" ? "docx" : "pdf", r.cover_letter, r.company, r.role, r.contact)}>
                       Also as {uploadFormat === "pdf" ? "DOCX" : "PDF"}
                     </DlBtn>
                   </>

@@ -244,8 +244,10 @@ CRITICAL RULES:
 - Mirror the posting's language without copying verbatim.
 - Quantify everything possible — pull metrics from the vault.
 - Address the CEO's pain in the professional summary and top bullets.
+- ALWAYS extract the candidate's full contact info (name, email, phone, location, linkedin) from the resume.
+- For the cover letter: search for the company's physical address and hiring manager name. Format as a proper business letter.
 
-For the cover letter: write the full letter first, then re-read it and REPLACE the first line with a hook — the most surprising or counter-intuitive thing about the candidate for this role. The hook must create a gap the reader needs to close by reading sentence two.
+For the cover letter: write the full letter BODY first, then re-read it and REPLACE the first line with a hook. The contact header, date, and recipient info go in separate fields — NOT in full_text.
 
 Respond ONLY with valid JSON (no markdown fences):
 {
@@ -259,6 +261,13 @@ Respond ONLY with valid JSON (no markdown fences):
   "recommendation": "strong_apply | apply_with_strategy | risky_apply | skip",
   "red_flags": [{"flag": "string", "severity": "string"}],
   "green_flags": [{"flag": "string"}],
+  "contact": {
+    "name": "string (full name from resume)",
+    "email": "string (from resume)",
+    "phone": "string (from resume)",
+    "location": "string (city, state from resume)",
+    "linkedin": "string or null (from resume if present)"
+  },
   "vault": {
     "skills": [{"name": "string", "proficiency": "string", "tags": ["string"]}],
     "experience": [{"company": "string", "role": "string", "dates": "string", "bullets": [{"text": "string", "tags": ["string"], "metrics": "string or null"}]}],
@@ -267,12 +276,18 @@ Respond ONLY with valid JSON (no markdown fences):
   "tailored_resume": {
     "summary": "string",
     "sections": [{"name": "string", "entries": [{"title": "string", "company": "string", "dates": "string", "bullets": ["string"]}]}],
-    "skills": ["string"]
+    "skills": ["string"],
+    "education": [{"degree": "string", "institution": "string", "dates": "string"}]
   },
   "cover_letter": {
+    "recipient_name": "string (hiring manager name if found, otherwise 'Hiring Manager')",
+    "recipient_title": "string or null",
+    "company_name": "string",
+    "company_address": "string (full street address of company, searched via web — e.g. '1901 Ulmerton Road, Clearwater, FL 33762')",
     "hook_line": "string",
     "original_first_line": "string",
-    "full_text": "string"
+    "full_text": "string (BODY ONLY — the 3 paragraphs, no header/date/address, no sign-off name)",
+    "sign_off": "string (e.g. 'Sincerely,' or 'Best regards,')"
   },
   "gap_report": {
     "critical_gaps": [{"gap": "string", "strategy": "string"}],
@@ -325,8 +340,8 @@ class DocumentRequest(BaseModel):
     role: str = "Role"
 
 
-def _build_resume_docx(data: dict, filepath: str):
-    """Generate a professional DOCX resume."""
+def _build_resume_docx(data: dict, contact: dict, filepath: str):
+    """Generate a professional DOCX resume with contact header."""
     from docx.shared import Pt, Inches, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
@@ -343,6 +358,43 @@ def _build_resume_docx(data: dict, filepath: str):
     style.font.size = Pt(10.5)
     style.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
 
+    def add_border(p):
+        pPr = p._p.get_or_add_pPr()
+        pBdr = pPr.makeelement(qn('w:pBdr'), {})
+        bottom = pBdr.makeelement(qn('w:bottom'), {qn('w:val'): 'single', qn('w:sz'): '4', qn('w:space'): '1', qn('w:color'): '999999'})
+        pBdr.append(bottom)
+        pPr.append(pBdr)
+
+    # Name header
+    if contact.get("name"):
+        np = doc.add_paragraph()
+        np.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        nr = np.add_run(contact["name"])
+        nr.bold = True
+        nr.font.size = Pt(18)
+        nr.font.color.rgb = RGBColor(0x1a, 0x1a, 0x1a)
+        np.space_after = Pt(2)
+
+    # Contact line
+    contact_parts = [contact.get(k) for k in ["location", "phone", "email", "linkedin"] if contact.get(k)]
+    if contact_parts:
+        cp = doc.add_paragraph()
+        cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cr = cp.add_run(" | ".join(contact_parts))
+        cr.font.size = Pt(9)
+        cr.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+        cp.space_after = Pt(6)
+
+    # Divider
+    dp = doc.add_paragraph()
+    dp.space_before = Pt(0)
+    dp.space_after = Pt(4)
+    pPr = dp._p.get_or_add_pPr()
+    pBdr = pPr.makeelement(qn('w:pBdr'), {})
+    bottom = pBdr.makeelement(qn('w:bottom'), {qn('w:val'): 'single', qn('w:sz'): '6', qn('w:space'): '1', qn('w:color'): '333333'})
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+
     # Summary
     summary = data.get("summary", "")
     if summary:
@@ -350,11 +402,7 @@ def _build_resume_docx(data: dict, filepath: str):
         run = p.add_run("PROFESSIONAL SUMMARY")
         run.bold = True
         run.font.size = Pt(11)
-        pPr = p._p.get_or_add_pPr()
-        pBdr = pPr.makeelement(qn('w:pBdr'), {})
-        bottom = pBdr.makeelement(qn('w:bottom'), {qn('w:val'): 'single', qn('w:sz'): '4', qn('w:space'): '1', qn('w:color'): '999999'})
-        pBdr.append(bottom)
-        pPr.append(pBdr)
+        add_border(p)
         sp = doc.add_paragraph(summary)
         sp.space_after = Pt(6)
 
@@ -365,11 +413,7 @@ def _build_resume_docx(data: dict, filepath: str):
         run.bold = True
         run.font.size = Pt(11)
         p.space_before = Pt(8)
-        pPr = p._p.get_or_add_pPr()
-        pBdr = pPr.makeelement(qn('w:pBdr'), {})
-        bottom = pBdr.makeelement(qn('w:bottom'), {qn('w:val'): 'single', qn('w:sz'): '4', qn('w:space'): '1', qn('w:color'): '999999'})
-        pBdr.append(bottom)
-        pPr.append(pBdr)
+        add_border(p)
 
         for entry in section.get("entries", []):
             ep = doc.add_paragraph()
@@ -398,18 +442,29 @@ def _build_resume_docx(data: dict, filepath: str):
         run.bold = True
         run.font.size = Pt(11)
         p.space_before = Pt(8)
-        pPr = p._p.get_or_add_pPr()
-        pBdr = pPr.makeelement(qn('w:pBdr'), {})
-        bottom = pBdr.makeelement(qn('w:bottom'), {qn('w:val'): 'single', qn('w:sz'): '4', qn('w:space'): '1', qn('w:color'): '999999'})
-        pBdr.append(bottom)
-        pPr.append(pBdr)
+        add_border(p)
         doc.add_paragraph(" | ".join(skills))
+
+    # Education
+    education = data.get("education", [])
+    if education:
+        p = doc.add_paragraph()
+        run = p.add_run("EDUCATION")
+        run.bold = True
+        run.font.size = Pt(11)
+        p.space_before = Pt(8)
+        add_border(p)
+        for edu in education:
+            ep = doc.add_paragraph()
+            er = ep.add_run(f"{edu.get('degree', '')}")
+            er.bold = True
+            ep.add_run(f" — {edu.get('institution', '')}  |  {edu.get('dates', '')}")
 
     doc.save(filepath)
 
 
-def _build_resume_pdf(data: dict, filepath: str):
-    """Generate a professional PDF resume."""
+def _build_resume_pdf(data: dict, contact: dict, filepath: str):
+    """Generate a professional PDF resume with contact header."""
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.colors import HexColor
@@ -420,25 +475,37 @@ def _build_resume_pdf(data: dict, filepath: str):
                             topMargin=0.5*inch, bottomMargin=0.5*inch,
                             leftMargin=0.65*inch, rightMargin=0.65*inch)
     styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='ResName', fontName='Helvetica-Bold', fontSize=16, alignment=1, spaceAfter=2, textColor=HexColor('#1a1a1a')))
+    styles.add(ParagraphStyle(name='ResCont', fontName='Helvetica', fontSize=8.5, alignment=1, spaceAfter=4, textColor=HexColor('#666666')))
     styles.add(ParagraphStyle(name='SHead', fontName='Helvetica-Bold', fontSize=10, spaceBefore=10, spaceAfter=3, textColor=HexColor('#1a1a1a')))
     styles.add(ParagraphStyle(name='EntryTitle', fontName='Helvetica-Bold', fontSize=10, spaceAfter=1, textColor=HexColor('#333333')))
     styles.add(ParagraphStyle(name='EntryDate', fontName='Helvetica', fontSize=8.5, textColor=HexColor('#666666'), spaceAfter=2))
-    styles.add(ParagraphStyle(name='ResBullet', fontName='Helvetica', fontSize=9.5, leftIndent=14, spaceAfter=2, textColor=HexColor('#333333'), bulletFontName='Helvetica', bulletFontSize=9.5, bulletIndent=0))
+    styles.add(ParagraphStyle(name='ResBullet', fontName='Helvetica', fontSize=9.5, leftIndent=14, spaceAfter=2, textColor=HexColor('#333333')))
     styles.add(ParagraphStyle(name='Sum', fontName='Helvetica', fontSize=9.5, spaceAfter=6, textColor=HexColor('#333333')))
     styles.add(ParagraphStyle(name='Skl', fontName='Helvetica', fontSize=9.5, spaceAfter=4, textColor=HexColor('#333333')))
 
     story = []
-    hr = lambda: HRFlowable(width="100%", thickness=0.3, color=HexColor('#999999'), spaceAfter=4)
+    hr_thick = lambda: HRFlowable(width="100%", thickness=0.5, color=HexColor('#333333'), spaceAfter=6, spaceBefore=4)
+    hr_thin = lambda: HRFlowable(width="100%", thickness=0.3, color=HexColor('#999999'), spaceAfter=4)
 
+    # Contact header
+    if contact.get("name"):
+        story.append(Paragraph(contact["name"], styles['ResName']))
+    contact_parts = [contact.get(k) for k in ["location", "phone", "email", "linkedin"] if contact.get(k)]
+    if contact_parts:
+        story.append(Paragraph(" | ".join(contact_parts), styles['ResCont']))
+    story.append(hr_thick())
+
+    # Summary
     summary = data.get("summary", "")
     if summary:
         story.append(Paragraph("PROFESSIONAL SUMMARY", styles['SHead']))
-        story.append(hr())
+        story.append(hr_thin())
         story.append(Paragraph(summary, styles['Sum']))
 
     for section in data.get("sections", []):
         story.append(Paragraph((section.get("name", "")).upper(), styles['SHead']))
-        story.append(hr())
+        story.append(hr_thin())
         for entry in section.get("entries", []):
             title = f"<b>{entry.get('title', '')}</b>"
             if entry.get("company"):
@@ -454,15 +521,23 @@ def _build_resume_pdf(data: dict, filepath: str):
     skills = data.get("skills", [])
     if skills:
         story.append(Paragraph("SKILLS", styles['SHead']))
-        story.append(hr())
+        story.append(hr_thin())
         story.append(Paragraph(" | ".join(skills), styles['Skl']))
+
+    education = data.get("education", [])
+    if education:
+        story.append(Paragraph("EDUCATION", styles['SHead']))
+        story.append(hr_thin())
+        for edu in education:
+            safe = f"<b>{edu.get('degree', '')}</b> — {edu.get('institution', '')}  |  {edu.get('dates', '')}"
+            story.append(Paragraph(safe, styles['Sum']))
 
     doc.build(story)
 
 
-def _build_cover_letter_docx(data: dict, filepath: str):
-    """Generate cover letter as DOCX."""
-    from docx.shared import Pt, Inches
+def _build_cover_letter_docx(data: dict, contact: dict, filepath: str):
+    """Generate cover letter as DOCX with full business letter format."""
+    from docx.shared import Pt, Inches, RGBColor
     doc = DocxDocument()
     for section in doc.sections:
         section.top_margin = Inches(1)
@@ -473,17 +548,60 @@ def _build_cover_letter_docx(data: dict, filepath: str):
     style.font.name = 'Calibri'
     style.font.size = Pt(11)
 
+    # Sender header
+    if contact.get("name"):
+        np = doc.add_paragraph()
+        nr = np.add_run(contact["name"])
+        nr.bold = True
+        nr.font.size = Pt(13)
+    contact_parts = [contact.get(k) for k in ["location", "phone", "email"] if contact.get(k)]
+    if contact_parts:
+        cp = doc.add_paragraph(" | ".join(contact_parts))
+        for run in cp.runs:
+            run.font.size = Pt(9.5)
+            run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+
+    # Date
+    doc.add_paragraph("")
+    doc.add_paragraph(datetime.now().strftime("%B %d, %Y"))
+
+    # Recipient
+    doc.add_paragraph("")
+    recipient = data.get("recipient_name", "Hiring Manager")
+    doc.add_paragraph(recipient)
+    if data.get("company_name"):
+        doc.add_paragraph(data["company_name"])
+    if data.get("company_address"):
+        doc.add_paragraph(data["company_address"])
+
+    # Greeting
+    doc.add_paragraph("")
+    greeting_name = recipient if recipient != "Hiring Manager" else "Hiring Team"
+    doc.add_paragraph(f"Dear {greeting_name},")
+
+    # Body
+    doc.add_paragraph("")
     full_text = data.get("full_text", "")
     for para in full_text.split("\n\n"):
         if para.strip():
             doc.add_paragraph(para.strip())
+
+    # Sign-off
+    doc.add_paragraph("")
+    sign_off = data.get("sign_off", "Sincerely,")
+    doc.add_paragraph(sign_off)
+    doc.add_paragraph("")
+    if contact.get("name"):
+        doc.add_paragraph(contact["name"])
+
     doc.save(filepath)
 
 
-def _build_cover_letter_pdf(data: dict, filepath: str):
-    """Generate cover letter as PDF."""
+def _build_cover_letter_pdf(data: dict, contact: dict, filepath: str):
+    """Generate cover letter as PDF with full business letter format."""
     from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.colors import HexColor
     from reportlab.lib.units import inch
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
@@ -491,13 +609,54 @@ def _build_cover_letter_pdf(data: dict, filepath: str):
                             topMargin=1*inch, bottomMargin=1*inch,
                             leftMargin=1*inch, rightMargin=1*inch)
     styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='SenderName', fontName='Helvetica-Bold', fontSize=13, spaceAfter=2, textColor=HexColor('#1a1a1a')))
+    styles.add(ParagraphStyle(name='SenderInfo', fontName='Helvetica', fontSize=9.5, spaceAfter=2, textColor=HexColor('#666666')))
+    styles.add(ParagraphStyle(name='LetterBody', fontName='Helvetica', fontSize=11, spaceAfter=10, textColor=HexColor('#333333'), leading=16))
+    styles.add(ParagraphStyle(name='LetterMeta', fontName='Helvetica', fontSize=11, spaceAfter=2, textColor=HexColor('#333333')))
+
     story = []
+
+    # Sender
+    if contact.get("name"):
+        story.append(Paragraph(contact["name"], styles['SenderName']))
+    contact_parts = [contact.get(k) for k in ["location", "phone", "email"] if contact.get(k)]
+    if contact_parts:
+        story.append(Paragraph(" | ".join(contact_parts), styles['SenderInfo']))
+    story.append(Spacer(1, 16))
+
+    # Date
+    story.append(Paragraph(datetime.now().strftime("%B %d, %Y"), styles['LetterMeta']))
+    story.append(Spacer(1, 12))
+
+    # Recipient
+    recipient = data.get("recipient_name", "Hiring Manager")
+    story.append(Paragraph(recipient, styles['LetterMeta']))
+    if data.get("company_name"):
+        story.append(Paragraph(data["company_name"], styles['LetterMeta']))
+    if data.get("company_address"):
+        story.append(Paragraph(data["company_address"], styles['LetterMeta']))
+    story.append(Spacer(1, 16))
+
+    # Greeting
+    greeting_name = recipient if recipient != "Hiring Manager" else "Hiring Team"
+    story.append(Paragraph(f"Dear {greeting_name},", styles['LetterBody']))
+    story.append(Spacer(1, 8))
+
+    # Body
     full_text = data.get("full_text", "")
     for para in full_text.split("\n\n"):
         if para.strip():
             safe = para.strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            story.append(Paragraph(safe, styles['Normal']))
-            story.append(Spacer(1, 12))
+            story.append(Paragraph(safe, styles['LetterBody']))
+
+    # Sign-off
+    story.append(Spacer(1, 12))
+    sign_off = data.get("sign_off", "Sincerely,")
+    story.append(Paragraph(sign_off, styles['LetterBody']))
+    story.append(Spacer(1, 24))
+    if contact.get("name"):
+        story.append(Paragraph(contact["name"], styles['LetterMeta']))
+
     doc.build(story)
 
 
@@ -515,17 +674,20 @@ async def generate_document(request: DocumentRequest):
     filename = f"{prefix}_{safe_company}_{safe_role}.{ext}"
     filepath = OUTPUT_DIR / filename
 
+    # Extract contact from the top-level results if provided
+    contact = request.data.get("_contact", {})
+
     try:
         if request.type == "resume":
             if ext == "pdf":
-                _build_resume_pdf(request.data, str(filepath))
+                _build_resume_pdf(request.data, contact, str(filepath))
             else:
-                _build_resume_docx(request.data, str(filepath))
+                _build_resume_docx(request.data, contact, str(filepath))
         elif request.type == "cover_letter":
             if ext == "pdf":
-                _build_cover_letter_pdf(request.data, str(filepath))
+                _build_cover_letter_pdf(request.data, contact, str(filepath))
             else:
-                _build_cover_letter_docx(request.data, str(filepath))
+                _build_cover_letter_docx(request.data, contact, str(filepath))
         else:
             raise HTTPException(400, "Type must be 'resume' or 'cover_letter'")
     except Exception as e:
