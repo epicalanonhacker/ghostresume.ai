@@ -178,6 +178,7 @@ export default function GhostResumeApp() {
   const [elapsed, setElapsed] = useState(0);
   const [results, setResults] = useState(null);
   const [activeTab, setActiveTab] = useState("resume");
+  const [showSkillTranslator, setShowSkillTranslator] = useState(false);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
@@ -547,7 +548,7 @@ export default function GhostResumeApp() {
                   <p style={{ fontSize: "13px", color: "#c4c4cc", margin: 0 }}>{g.strategy}</p>
                 </div>))}
               </div>)}
-              {(r.gap_report.gap_closers || []).length > 0 && (<div>
+              {(r.gap_report.gap_closers || []).length > 0 && (<div style={{ marginBottom: "24px" }}>
                 <h3 style={{ fontSize: "14px", fontWeight: 700, color: ACCENT, marginBottom: "12px" }}>Gap Closer Actions</h3>
                 {r.gap_report.gap_closers.map((gc, i) => (<div key={i} style={{ background: BG, borderRadius: "8px", padding: "14px", border: `1px solid ${BORDER}`, marginBottom: "8px", display: "flex", gap: "12px", alignItems: "flex-start" }}>
                   <span style={{ fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: "4px", background: ACCENT_DIM, color: ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{gc.tier}</span>
@@ -557,6 +558,51 @@ export default function GhostResumeApp() {
                     <p style={{ fontSize: "11px", color: MUTED, margin: 0 }}>Time: {gc.time}</p>
                   </div>
                 </div>))}
+              </div>)}
+
+              {/* SKILL TRANSLATOR — Optional */}
+              {(r.gap_report.skill_translations || []).length > 0 && (<div style={{ borderTop: `1px dashed ${BORDER}`, paddingTop: "20px", marginTop: "8px" }}>
+                <button onClick={() => setShowSkillTranslator(!showSkillTranslator)} style={{
+                  width: "100%", padding: "12px 16px", background: "rgba(245,158,11,0.06)",
+                  border: `1px solid rgba(245,158,11,0.2)`, borderRadius: "8px", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  fontFamily: "'DM Sans', sans-serif", color: TEXT, fontSize: "14px", fontWeight: 600,
+                }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ color: WARNING }}>⚖</span>
+                    Skill Translator <span style={{ fontSize: "11px", color: MUTED, fontWeight: 400 }}>({r.gap_report.skill_translations.length} translations available)</span>
+                  </span>
+                  <span style={{ color: MUTED, fontSize: "12px" }}>{showSkillTranslator ? "Hide ▲" : "Show ▼"}</span>
+                </button>
+
+                {showSkillTranslator && (<div style={{ marginTop: "16px" }}>
+                  <div style={{ background: "rgba(245,158,11,0.04)", border: `1px solid rgba(245,158,11,0.15)`, borderRadius: "8px", padding: "14px", marginBottom: "16px", fontSize: "12px", color: "#c4c4cc", lineHeight: 1.6 }}>
+                    <p style={{ margin: "0 0 8px", fontWeight: 600, color: WARNING }}>How to use this ethically:</p>
+                    <p style={{ margin: 0 }}>
+                      These translations reframe real activities into professional language — you did the thing, we're just describing it in terms a recruiter understands. Use these in a "Personal Projects" section or in interview conversations. <strong>Never invent job titles or paid employment that didn't exist.</strong> The context_note shows where each translation honestly belongs.
+                    </p>
+                  </div>
+                  {r.gap_report.skill_translations.map((st, i) => (<div key={i} style={{ background: BG, borderRadius: "8px", padding: "14px", border: `1px solid ${BORDER}`, marginBottom: "8px" }}>
+                    <div style={{ marginBottom: "10px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>What You Did</div>
+                      <p style={{ fontSize: "13px", color: "#c4c4cc", margin: 0 }}>{st.source_activity}</p>
+                    </div>
+                    <div style={{ marginBottom: "10px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 600, color: ACCENT, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Professional Translation</div>
+                      <p style={{ fontSize: "13px", color: TEXT, margin: 0, fontWeight: 500 }}>{st.professional_translation}</p>
+                    </div>
+                    {st.skills_demonstrated && st.skills_demonstrated.length > 0 && (<div style={{ marginBottom: "10px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 600, color: SUCCESS, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Skills Demonstrated</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                        {st.skills_demonstrated.map((s, si) => (<span key={si} style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "4px", background: "rgba(34,197,94,0.1)", color: SUCCESS, fontWeight: 500 }}>{s}</span>))}
+                      </div>
+                    </div>)}
+                    {st.context_note && (<div style={{ background: "rgba(113,113,122,0.1)", borderLeft: `2px solid ${MUTED}`, padding: "8px 12px", borderRadius: "0 4px 4px 0" }}>
+                      <div style={{ fontSize: "10px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "2px" }}>Context</div>
+                      <p style={{ fontSize: "12px", color: MUTED, margin: 0, fontStyle: "italic" }}>{st.context_note}</p>
+                    </div>)}
+                  </div>))}
+                </div>)}
               </div>)}
             </div>)}
 

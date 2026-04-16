@@ -247,6 +247,21 @@ CRITICAL RULES:
 - ALWAYS extract the candidate's full contact info (name, email, phone, location, linkedin) from the resume.
 - For the cover letter: search for the company's physical address and hiring manager name. Format as a proper business letter.
 
+SKILL TRANSLATION PHILOSOPHY (for the gap_report.skill_translations field):
+Think of yourself as a lawyer presenting your client in the best possible light — you stretch the truth professionally, you never fabricate it. If the candidate mentions non-traditional experience (gaming, content creation, hobbies, volunteering, unconventional projects), identify real hard/soft skills those activities demonstrated and translate them into professional language.
+
+Examples of valid skill translation:
+- "Led a 40-person WoW raid guild" → "Coordinated and led 40+ person team in high-pressure strategic operations"
+- "Streamed on Twitch to 500 nightly viewers" → "Built and engaged an audience of 500+ daily through consistent content production"
+- "Modded a game server for 3 years" → "Administered online community platforms, handling technical support and user management"
+
+Rules for skill translation:
+- The SOURCE activity must be real (from the resume or implied by context)
+- The TRANSLATION must describe real skills actually demonstrated
+- NEVER invent job titles, company names, or paid employment
+- ALWAYS include a context_note explaining where/how to honestly frame it (Personal Projects section, interview discussion, etc.)
+- If the candidate's resume has no gaps that need closing this way, return an empty skill_translations array
+
 For the cover letter: write the full letter BODY first, then re-read it and REPLACE the first line with a hook. The contact header, date, and recipient info go in separate fields — NOT in full_text.
 
 Respond ONLY with valid JSON (no markdown fences):
@@ -292,7 +307,8 @@ Respond ONLY with valid JSON (no markdown fences):
   "gap_report": {
     "critical_gaps": [{"gap": "string", "strategy": "string"}],
     "advantages": [{"strength": "string", "pitch": "string"}],
-    "gap_closers": [{"gap": "string", "tier": "string", "action": "string", "time": "string"}]
+    "gap_closers": [{"gap": "string", "tier": "string", "action": "string", "time": "string"}],
+    "skill_translations": [{"source_activity": "string (what the candidate actually did — e.g. 'Led a 40-person raid guild in WoW for 3 years')", "professional_translation": "string (how to describe it on a resume — e.g. 'Coordinated and led 40+ person team in high-pressure strategic operations, managing scheduling, conflict resolution, and performance optimization')", "skills_demonstrated": ["string (actual skills this maps to — leadership, strategic planning, etc.)"], "context_note": "string (honest context to keep in mind — e.g. 'Frame as Personal Projects section or in interview context, not as paid employment')"}]
   },
   "interview_prep": {
     "two_min_pitch": "string",
