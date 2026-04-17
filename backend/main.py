@@ -348,6 +348,189 @@ async def get_session(session_id: str):
         return json.load(f)
 
 
+class GapTranslateRequest(BaseModel):
+    gap: str
+    gap_strategy: str = ""
+    vault: dict = {}
+    role: str = ""
+    company: str = ""
+
+
+@app.post("/api/gap-translate")
+async def gap_translate(request: GapTranslateRequest):
+    """Look at the candidate's existing vault and propose honest translations
+    for a specific gap, using only real experience they already have."""
+    if not ANTHROPIC_KEY:
+        raise HTTPException(500, "Anthropic API key not configured")
+
+    system_prompt = """You are an ethical career advisor helping a candidate address a specific gap
+in their resume using ONLY experience they actually have.
+
+You will receive:
+- A specific gap/missing skill the candidate has
+- Their vault of real experience
+- The role/company they're applying to
+
+Your job: find any real experience in the vault that could honestly translate into the missing skill.
+Think like a lawyer — present the candidate's real activities in their most favorable professional light,
+but NEVER invent experiences they don't have.
+
+RULES:
+- Only use activities actually present in the vault
+- Frame real experience using the vocabulary of the gap
+- If NO honest translation is possible, return empty translations and say so — do not stretch
+- Every translation needs an honest context_note about where it belongs
+
+Respond ONLY with valid JSON:
+{
+  "can_be_bridged": true/false,
+  "reasoning": "string (honest assessment of whether their real experience can address this gap)",
+  "translations": [
+    {
+      "source_activity": "string (real thing from their vault)",
+      "translated_bullet": "string (a bullet point ready to add to the resume, using the gap's vocabulary)",
+      "section_to_add_to": "string (which resume section this should go in, e.g. 'Professional Experience', 'Projects', or 'Skills')",
+      "context_note": "string (honest framing guidance)"
+    }
+  ]
+}"""
+
+    user_message = f"""GAP: {request.gap}
+STRATEGY SUGGESTED: {request.gap_strategy}
+ROLE/COMPANY: {request.role} at {request.company}
+
+CANDIDATE'S VAULT (only use what's here):
+{json.dumps(request.vault, indent=2)}"""
+
+    try:
+        raw = await call_claude(system_prompt, user_message)
+        result = parse_json_response(raw)
+        return result
+    except Exception as e:
+        raise HTTPException(500, f"Translation failed: {str(e)}")
+
+
+class QuestionnaireStartRequest(BaseModel):
+    gap: str
+    gap_strategy: str = ""
+    role: str = ""
+    company: str = ""
+
+
+@app.post("/api/gap-questionnaire/start")
+async def gap_questionnaire_start(request: QuestionnaireStartRequest):
+    """Start an interactive lawyer-style questionnaire for a specific gap.
+    Claude generates the first question. Subsequent Q&A goes through /continue."""
+    if not ANTHROPIC_KEY:
+        raise HTTPException(500, "Anthropic API key not configured")
+
+    system_prompt = """You are an ethical career advisor conducting a lawyer-style discovery
+interview to uncover whether a candidate has REAL experience that addresses a specific gap.
+
+Think like a lawyer interviewing a client: ask focused questions that might surface relevant
+experience the candidate didn't think to include. Never suggest fabrication.
+
+Start by asking ONE specific, open-ended question designed to surface real evidence of the
+missing skill. The question should be practical and concrete, not abstract.
+
+Example bad question: "Do you have any sales experience?"
+Example good question: "Have you ever convinced someone to try something they were initially hesitant about — whether in a work, volunteer, or personal context? Walk me through what happened."
+
+Respond ONLY with valid JSON:
+{
+  "question": "string (first question to ask)",
+  "purpose": "string (what you're trying to uncover with this question)"
+}"""
+
+    user_message = f"""GAP TO EXPLORE: {request.gap}
+CONTEXT: Applying for {request.role} at {request.company}
+STRATEGY: {request.gap_strategy}
+
+Generate the first discovery question."""
+
+    try:
+        raw = await call_claude(system_prompt, user_message)
+        return parse_json_response(raw)
+    except Exception as e:
+        raise HTTPException(500, f"Questionnaire start failed: {str(e)}")
+
+
+class QuestionnaireContinueRequest(BaseModel):
+    gap: str
+    role: str = ""
+    company: str = ""
+    conversation: list  # list of {question, answer} pairs so far
+    question_count: int = 0  # how many questions asked so far
+
+
+@app.post("/api/gap-questionnaire/continue")
+async def gap_questionnaire_continue(request: QuestionnaireContinueRequest):
+    """Continue the questionnaire. Claude either asks another question or concludes.
+    After 3-5 questions, Claude must decide: can we honestly bridge this gap or not?"""
+    if not ANTHROPIC_KEY:
+        raise HTTPException(500, "Anthropic API key not configured")
+
+    should_conclude = request.question_count >= 3
+
+    system_prompt = f"""You are an ethical career advisor continuing a lawyer-style discovery
+interview. Your job: uncover real experience that addresses a gap, OR honestly conclude it
+can't be bridged.
+
+RULES:
+- You have asked {request.question_count} questions already.
+- {'MUST CONCLUDE NOW: Produce final assessment.' if should_conclude else 'Either ask ONE more focused follow-up question (if answers suggest more to uncover) OR conclude if you have enough.'}
+- If answers are thin, vague, or unrelated, be honest: this gap CANNOT be bridged from real experience.
+- If answers reveal real relevant experience, produce resume bullets using ONLY what was said.
+
+When concluding, respond with either:
+
+A) If the candidate DOES have real relevant experience:
+{{
+  "action": "conclude_with_bullets",
+  "can_be_bridged": true,
+  "assessment": "string (honest summary of what real experience emerged)",
+  "translations": [
+    {{
+      "source_activity": "string (what they actually described)",
+      "translated_bullet": "string (resume bullet using ONLY what they said)",
+      "section_to_add_to": "string (Professional Experience | Projects | Skills)",
+      "context_note": "string (how to honestly frame it)"
+    }}
+  ]
+}}
+
+B) If the candidate does NOT have real relevant experience:
+{{
+  "action": "conclude_cannot_bridge",
+  "can_be_bridged": false,
+  "assessment": "string (honest explanation of why this gap can't be bridged from their real experience)",
+  "recommendation": "string (what they should do instead — skip the role, pursue a gap closer action, or address in cover letter)"
+}}
+
+C) If you need ONE more question (only if question_count < 3):
+{{
+  "action": "ask_question",
+  "question": "string",
+  "purpose": "string"
+}}"""
+
+    conv_text = "\n\n".join([f"Q{i+1}: {qa['question']}\nA{i+1}: {qa['answer']}" for i, qa in enumerate(request.conversation)])
+
+    user_message = f"""GAP: {request.gap}
+ROLE/COMPANY: {request.role} at {request.company}
+
+CONVERSATION SO FAR:
+{conv_text}
+
+Based on these answers, {'produce your final assessment' if should_conclude else 'decide: ask one more question, or conclude'}."""
+
+    try:
+        raw = await call_claude(system_prompt, user_message)
+        return parse_json_response(raw)
+    except Exception as e:
+        raise HTTPException(500, f"Questionnaire continue failed: {str(e)}")
+
+
 class DocumentRequest(BaseModel):
     type: str  # "resume" or "cover_letter"
     format: str  # "pdf" or "docx"

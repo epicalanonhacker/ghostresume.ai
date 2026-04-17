@@ -118,6 +118,36 @@ function dlText(content, filename) {
   URL.revokeObjectURL(url);
 }
 
+async function apiGapTranslate(gap, gapStrategy, vault, role, company) {
+  const res = await fetch(`${API_BASE}/api/gap-translate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gap, gap_strategy: gapStrategy, vault, role, company }),
+  });
+  if (!res.ok) throw new Error("Translation failed");
+  return res.json();
+}
+
+async function apiQuestionnaireStart(gap, gapStrategy, role, company) {
+  const res = await fetch(`${API_BASE}/api/gap-questionnaire/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gap, gap_strategy: gapStrategy, role, company }),
+  });
+  if (!res.ok) throw new Error("Questionnaire failed to start");
+  return res.json();
+}
+
+async function apiQuestionnaireContinue(gap, role, company, conversation, questionCount) {
+  const res = await fetch(`${API_BASE}/api/gap-questionnaire/continue`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gap, role, company, conversation, question_count: questionCount }),
+  });
+  if (!res.ok) throw new Error("Questionnaire failed to continue");
+  return res.json();
+}
+
 function fmtResume(r) {
   const res = r.tailored_resume; if (!res) return "";
   const L = [];
@@ -179,6 +209,9 @@ export default function GhostResumeApp() {
   const [results, setResults] = useState(null);
   const [activeTab, setActiveTab] = useState("resume");
   const [showSkillTranslator, setShowSkillTranslator] = useState(false);
+  const [gapModal, setGapModal] = useState(null); // { gap, strategy, mode, ...state }
+  const [addedBullets, setAddedBullets] = useState([]); // bullets added to resume via gap closer
+  const [addedSkills, setAddedSkills] = useState([]); // skills added from translator
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
@@ -235,6 +268,35 @@ export default function GhostResumeApp() {
   const resetAll = () => {
     setScreen("upload"); setResults(null); setResumeText(""); setResumeFileName("");
     setResumeFile(null); setUploadFormat("txt"); setJobUrl(""); setJobText(""); setActiveTab("resume");
+    setGapModal(null); setAddedBullets([]); setAddedSkills([]);
+  };
+
+  // Merge added bullets/skills into the tailored resume for display and download
+  const getEnrichedResume = () => {
+    if (!results) return null;
+    const base = results.tailored_resume || {};
+    const enriched = JSON.parse(JSON.stringify(base));
+    // Inject added bullets into the right section (create section if needed)
+    for (const b of addedBullets) {
+      const targetName = b.section || "Additional Experience";
+      let section = (enriched.sections || []).find(s => s.name === targetName);
+      if (!section) {
+        section = { name: targetName, entries: [{ title: "Additional Qualifications", company: "", dates: "", bullets: [] }] };
+        enriched.sections = enriched.sections || [];
+        enriched.sections.push(section);
+      }
+      // Add to first entry in that section
+      if (!section.entries || !section.entries.length) {
+        section.entries = [{ title: "Additional Qualifications", company: "", dates: "", bullets: [] }];
+      }
+      section.entries[0].bullets = section.entries[0].bullets || [];
+      section.entries[0].bullets.push(b.bullet);
+    }
+    // Merge added skills
+    if (addedSkills.length) {
+      enriched.skills = [...(enriched.skills || []), ...addedSkills.filter(s => !(enriched.skills || []).includes(s))];
+    }
+    return enriched;
   };
 
   useEffect(() => {
@@ -344,7 +406,7 @@ export default function GhostResumeApp() {
       <div style={{ textAlign: "center", position: "relative", padding: "24px" }}>
         <Ghost size={48} color={ACCENT} strokeWidth={1.5} style={{ marginBottom: "24px", opacity: 0.8 }} />
         <h2 style={{ margin: "0 0 8px", fontSize: "22px", fontWeight: 700 }}>Building your ghost resume...</h2>
-        <p style={{ margin: "0 0 8px", color: MUTED, fontSize: "14px" }}>This typically takes 30–60 seconds</p>
+        <p style={{ margin: "0 0 8px", color: MUTED, fontSize: "14px" }}>This typically takes 1–2 minutes</p>
         <p style={{ margin: "0 0 32px", fontFamily: "'Space Mono', monospace", fontSize: "22px", color: ACCENT, fontWeight: 700 }}>
           {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
         </p>
@@ -419,39 +481,58 @@ export default function GhostResumeApp() {
 
           <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: "0 12px 12px 12px", padding: "28px" }}>
 
-            {activeTab === "resume" && r.tailored_resume && (<div>
+            {activeTab === "resume" && r.tailored_resume && (() => {
+              const enriched = getEnrichedResume();
+              const hasAdditions = addedBullets.length > 0 || addedSkills.length > 0;
+              return (<div>
+              {hasAdditions && (<div style={{ background: "rgba(34,197,94,0.08)", border: `1px solid rgba(34,197,94,0.2)`, borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "12px", color: SUCCESS }}>
+                ✓ {addedBullets.length} bullet{addedBullets.length !== 1 ? "s" : ""} and {addedSkills.length} skill{addedSkills.length !== 1 ? "s" : ""} added from Gap Report
+              </div>)}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "16px" }}>
                 {uploadFormat === "txt" ? (
-                  <DlBtn onClick={() => dlText(fmtResume(r), `Resume_${s}.txt`)}>Download as TXT</DlBtn>
+                  <DlBtn onClick={() => dlText(fmtResume({ ...r, tailored_resume: enriched }), `Resume_${s}.txt`)}>Download as TXT</DlBtn>
                 ) : (
                   <>
-                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat, r.tailored_resume, r.company, r.role, r.contact)}>
+                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat, enriched, r.company, r.role, r.contact)}>
                       Download as {uploadFormat.toUpperCase()}
                     </DlBtn>
-                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat === "pdf" ? "docx" : "pdf", r.tailored_resume, r.company, r.role, r.contact)}>
+                    <DlBtn onClick={() => downloadDocument("resume", uploadFormat === "pdf" ? "docx" : "pdf", enriched, r.company, r.role, r.contact)}>
                       Also as {uploadFormat === "pdf" ? "DOCX" : "PDF"}
                     </DlBtn>
                   </>
                 )}
               </div>
               <div style={{ background: BG, borderRadius: "8px", padding: "24px", border: `1px solid ${BORDER}` }}>
-                <p style={{ fontSize: "14px", lineHeight: 1.7, color: TEXT, margin: "0 0 20px", fontStyle: "italic" }}>{r.tailored_resume.summary}</p>
-                {(r.tailored_resume.sections || []).map((sec, si) => (<div key={si} style={{ marginBottom: "20px" }}>
+                <p style={{ fontSize: "14px", lineHeight: 1.7, color: TEXT, margin: "0 0 20px", fontStyle: "italic" }}>{enriched.summary}</p>
+                {(enriched.sections || []).map((sec, si) => (<div key={si} style={{ marginBottom: "20px" }}>
                   <h3 style={{ fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: ACCENT, borderBottom: `1px solid ${BORDER}`, paddingBottom: "6px", marginBottom: "12px" }}>{sec.name}</h3>
                   {(sec.entries || []).map((en, ei) => (<div key={ei} style={{ marginBottom: "16px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "4px", flexWrap: "wrap", gap: "8px" }}>
                       <span style={{ fontSize: "14px", fontWeight: 600 }}>{en.title}{en.company ? ` — ${en.company}` : ""}</span>
                       <span style={{ fontSize: "12px", color: MUTED }}>{en.dates}</span>
                     </div>
-                    {(en.bullets || []).map((b, bi) => (<div key={bi} style={{ display: "flex", gap: "8px", marginBottom: "4px", fontSize: "13px", color: "#c4c4cc", lineHeight: 1.6 }}><span style={{ color: ACCENT, flexShrink: 0 }}>•</span><span>{b}</span></div>))}
+                    {(en.bullets || []).map((b, bi) => {
+                      const isAdded = addedBullets.some(ab => ab.bullet === b);
+                      return (
+                        <div key={bi} style={{ display: "flex", gap: "8px", marginBottom: "4px", fontSize: "13px", color: "#c4c4cc", lineHeight: 1.6 }}>
+                          <span style={{ color: isAdded ? SUCCESS : ACCENT, flexShrink: 0 }}>•</span>
+                          <span>{b}{isAdded && <span style={{ fontSize: "10px", color: SUCCESS, marginLeft: "6px", fontWeight: 600 }}>ADDED</span>}</span>
+                        </div>
+                      );
+                    })}
                   </div>))}
                 </div>))}
-                {r.tailored_resume.skills && (<div>
+                {enriched.skills && (<div>
                   <h3 style={{ fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: ACCENT, borderBottom: `1px solid ${BORDER}`, paddingBottom: "6px", marginBottom: "10px" }}>Skills</h3>
-                  <p style={{ fontSize: "13px", color: "#c4c4cc", lineHeight: 1.8 }}>{(r.tailored_resume.skills || []).join("  ·  ")}</p>
+                  <p style={{ fontSize: "13px", color: "#c4c4cc", lineHeight: 1.8 }}>
+                    {(enriched.skills || []).map((sk, ski) => {
+                      const isAdded = addedSkills.includes(sk);
+                      return <span key={ski} style={{ color: isAdded ? SUCCESS : "#c4c4cc", fontWeight: isAdded ? 600 : 400 }}>{sk}{ski < enriched.skills.length - 1 ? "  ·  " : ""}</span>;
+                    })}
+                  </p>
                 </div>)}
               </div>
-            </div>)}
+            </div>);})()}
 
             {activeTab === "cover" && r.cover_letter && (<div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "16px" }}>
@@ -542,11 +623,21 @@ export default function GhostResumeApp() {
                 </div>))}
               </div>)}
               {(r.gap_report.critical_gaps || []).length > 0 && (<div style={{ marginBottom: "24px" }}>
-                <h3 style={{ fontSize: "14px", fontWeight: 700, color: WARNING, marginBottom: "12px" }}>Gaps to Address</h3>
-                {r.gap_report.critical_gaps.map((g, i) => (<div key={i} style={{ background: "rgba(245,158,11,0.06)", borderRadius: "8px", padding: "14px", border: "1px solid rgba(245,158,11,0.15)", marginBottom: "8px" }}>
-                  <p style={{ fontSize: "13px", fontWeight: 600, color: WARNING, margin: "0 0 4px" }}>{g.gap}</p>
-                  <p style={{ fontSize: "13px", color: "#c4c4cc", margin: 0 }}>{g.strategy}</p>
-                </div>))}
+                <h3 style={{ fontSize: "14px", fontWeight: 700, color: WARNING, marginBottom: "6px" }}>Gaps to Address</h3>
+                <p style={{ fontSize: "12px", color: MUTED, marginBottom: "12px" }}>Tap any gap to add experience, translate existing skills, or start a discovery questionnaire.</p>
+                {r.gap_report.critical_gaps.map((g, i) => (<button key={i}
+                  onClick={() => setGapModal({ gap: g.gap, strategy: g.strategy, mode: "choose" })}
+                  style={{ width: "100%", textAlign: "left", background: "rgba(245,158,11,0.06)", borderRadius: "8px", padding: "14px", border: "1px solid rgba(245,158,11,0.15)", marginBottom: "8px", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", transition: "all 0.2s" }}
+                  onMouseOver={e => e.currentTarget.style.background = "rgba(245,158,11,0.12)"}
+                  onMouseOut={e => e.currentTarget.style.background = "rgba(245,158,11,0.06)"}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: "13px", fontWeight: 600, color: WARNING, margin: "0 0 4px" }}>{g.gap}</p>
+                      <p style={{ fontSize: "13px", color: "#c4c4cc", margin: 0 }}>{g.strategy}</p>
+                    </div>
+                    <span style={{ fontSize: "11px", color: WARNING, fontWeight: 600, whiteSpace: "nowrap" }}>Tap to address →</span>
+                  </div>
+                </button>))}
               </div>)}
               {(r.gap_report.gap_closers || []).length > 0 && (<div style={{ marginBottom: "24px" }}>
                 <h3 style={{ fontSize: "14px", fontWeight: 700, color: ACCENT, marginBottom: "12px" }}>Gap Closer Actions</h3>
@@ -592,11 +683,47 @@ export default function GhostResumeApp() {
                       <p style={{ fontSize: "13px", color: TEXT, margin: 0, fontWeight: 500 }}>{st.professional_translation}</p>
                     </div>
                     {st.skills_demonstrated && st.skills_demonstrated.length > 0 && (<div style={{ marginBottom: "10px" }}>
-                      <div style={{ fontSize: "11px", fontWeight: 600, color: SUCCESS, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Skills Demonstrated</div>
+                      <div style={{ fontSize: "11px", fontWeight: 600, color: SUCCESS, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Skills Demonstrated <span style={{ color: MUTED, fontWeight: 400, fontSize: "10px" }}>(tap to add to resume)</span></div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                        {st.skills_demonstrated.map((s, si) => (<span key={si} style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "4px", background: "rgba(34,197,94,0.1)", color: SUCCESS, fontWeight: 500 }}>{s}</span>))}
+                        {st.skills_demonstrated.map((s, si) => {
+                          const added = addedSkills.includes(s);
+                          return (
+                            <button key={si}
+                              onClick={() => {
+                                if (added) setAddedSkills(addedSkills.filter(x => x !== s));
+                                else setAddedSkills([...addedSkills, s]);
+                              }}
+                              style={{
+                                fontSize: "11px", padding: "3px 8px", borderRadius: "4px",
+                                background: added ? SUCCESS : "rgba(34,197,94,0.1)",
+                                color: added ? "#000" : SUCCESS,
+                                fontWeight: added ? 700 : 500, cursor: "pointer",
+                                border: "none", fontFamily: "'DM Sans', sans-serif",
+                              }}>
+                              {added ? "✓ " : "+ "}{s}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>)}
+                    <div style={{ marginBottom: "10px" }}>
+                      <button onClick={() => {
+                        const bullet = st.professional_translation;
+                        const alreadyAdded = addedBullets.some(b => b.bullet === bullet);
+                        if (alreadyAdded) {
+                          setAddedBullets(addedBullets.filter(b => b.bullet !== bullet));
+                        } else {
+                          setAddedBullets([...addedBullets, { bullet, section: "Additional Experience", source: "skill_translator" }]);
+                        }
+                      }} style={{
+                        fontSize: "12px", padding: "6px 12px", borderRadius: "6px",
+                        border: `1px solid ${ACCENT}`, background: addedBullets.some(b => b.bullet === st.professional_translation) ? ACCENT : "transparent",
+                        color: addedBullets.some(b => b.bullet === st.professional_translation) ? "#000" : ACCENT,
+                        fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                      }}>
+                        {addedBullets.some(b => b.bullet === st.professional_translation) ? "✓ Added to Resume" : "+ Add Bullet to Resume"}
+                      </button>
+                    </div>
                     {st.context_note && (<div style={{ background: "rgba(113,113,122,0.1)", borderLeft: `2px solid ${MUTED}`, padding: "8px 12px", borderRadius: "0 4px 4px 0" }}>
                       <div style={{ fontSize: "10px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "2px" }}>Context</div>
                       <p style={{ fontSize: "12px", color: MUTED, margin: 0, fontStyle: "italic" }}>{st.context_note}</p>
@@ -608,8 +735,281 @@ export default function GhostResumeApp() {
 
           </div>
         </div>
+
+        {/* GAP MODAL */}
+        {gapModal && <GapModal
+          gapModal={gapModal}
+          setGapModal={setGapModal}
+          vault={r.vault || {}}
+          role={r.role || ""}
+          company={r.company || ""}
+          onAddBullet={(bullet, section) => {
+            setAddedBullets(prev => [...prev, { bullet, section: section || "Additional Experience", source: "gap_closer" }]);
+          }}
+          onAddSkill={(skill) => {
+            setAddedSkills(prev => prev.includes(skill) ? prev : [...prev, skill]);
+          }}
+        />}
       </div>
     );
   }
   return null;
+}
+
+// ============================================================
+// GAP MODAL COMPONENT
+// ============================================================
+function GapModal({ gapModal, setGapModal, vault, role, company, onAddBullet, onAddSkill }) {
+  const { gap, strategy, mode } = gapModal;
+  const [loading, setLoading] = useState(false);
+  const [translations, setTranslations] = useState([]);
+  const [addManualBullet, setAddManualBullet] = useState("");
+  const [addManualSection, setAddManualSection] = useState("Professional Experience");
+  const [qConversation, setQConversation] = useState([]);
+  const [qCurrent, setQCurrent] = useState(null);
+  const [qAnswer, setQAnswer] = useState("");
+  const [qResult, setQResult] = useState(null);
+
+  const close = () => setGapModal(null);
+  const setMode = (m) => setGapModal({ ...gapModal, mode: m });
+
+  const runTranslate = async () => {
+    setLoading(true);
+    try {
+      const res = await apiGapTranslate(gap, strategy, vault, role, company);
+      setTranslations(res.translations || []);
+      setQResult({ can_be_bridged: res.can_be_bridged, reasoning: res.reasoning });
+    } catch (err) {
+      alert("Failed: " + err.message);
+    }
+    setLoading(false);
+  };
+
+  const startQuestionnaire = async () => {
+    setLoading(true);
+    try {
+      const res = await apiQuestionnaireStart(gap, strategy, role, company);
+      setQCurrent(res);
+      setQConversation([]);
+    } catch (err) {
+      alert("Failed: " + err.message);
+    }
+    setLoading(false);
+  };
+
+  const submitAnswer = async () => {
+    if (!qAnswer.trim()) return;
+    const newConv = [...qConversation, { question: qCurrent.question, answer: qAnswer }];
+    setQConversation(newConv);
+    setQAnswer("");
+    setLoading(true);
+    try {
+      const res = await apiQuestionnaireContinue(gap, role, company, newConv, newConv.length);
+      if (res.action === "ask_question") {
+        setQCurrent(res);
+      } else {
+        setQCurrent(null);
+        setQResult(res);
+        setTranslations(res.translations || []);
+      }
+    } catch (err) {
+      alert("Failed: " + err.message);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div onClick={close} style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 100, padding: "20px", overflow: "auto",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: CARD, border: `1px solid ${BORDER}`, borderRadius: "12px",
+        padding: "28px", maxWidth: "640px", width: "100%", maxHeight: "90vh", overflowY: "auto",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+          <div>
+            <p style={{ fontSize: "11px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 4px" }}>Addressing Gap</p>
+            <h3 style={{ fontSize: "16px", fontWeight: 700, color: WARNING, margin: 0 }}>{gap}</h3>
+          </div>
+          <button onClick={close} style={{ background: "none", border: "none", cursor: "pointer", color: MUTED, padding: "4px" }}><X size={20} /></button>
+        </div>
+
+        {/* MODE: CHOOSE */}
+        {mode === "choose" && (
+          <div>
+            <p style={{ fontSize: "13px", color: "#c4c4cc", marginBottom: "20px", lineHeight: 1.6 }}>
+              How do you want to address this gap? Choose the option that matches your actual situation.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <ChoiceButton onClick={() => setMode("manual")} icon="✍" title="I actually have this experience" subtitle="Type it out — I'll add it to the right resume section" />
+              <ChoiceButton onClick={() => { setMode("translate"); runTranslate(); }} icon="🔄" title="Translate from my existing skills" subtitle="AI looks at your vault for real experience that maps to this gap" />
+              <ChoiceButton onClick={() => { setMode("questionnaire"); startQuestionnaire(); }} icon="💬" title="Start a discovery questionnaire" subtitle="Lawyer-style interview — AI asks questions to surface real experience" />
+            </div>
+          </div>
+        )}
+
+        {/* MODE: MANUAL */}
+        {mode === "manual" && (
+          <div>
+            <button onClick={() => setMode("choose")} style={{ background: "none", border: "none", color: ACCENT, cursor: "pointer", fontSize: "12px", marginBottom: "12px", padding: 0 }}>← Back</button>
+            <p style={{ fontSize: "13px", color: "#c4c4cc", marginBottom: "16px", lineHeight: 1.6 }}>
+              Describe this experience in your own words. Use concrete details and numbers when possible.
+            </p>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", display: "block", marginBottom: "6px" }}>Your bullet point</label>
+            <textarea value={addManualBullet} onChange={e => setAddManualBullet(e.target.value)}
+              placeholder="e.g. Led weekly sales meetings that resulted in 15% revenue increase..."
+              style={{ width: "100%", minHeight: "100px", padding: "12px", background: BG, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT, fontFamily: "'DM Sans', sans-serif", fontSize: "13px", resize: "vertical", outline: "none", boxSizing: "border-box", marginBottom: "12px" }} />
+            <label style={{ fontSize: "11px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", display: "block", marginBottom: "6px" }}>Section to add to</label>
+            <select value={addManualSection} onChange={e => setAddManualSection(e.target.value)}
+              style={{ width: "100%", padding: "10px 12px", background: BG, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT, fontSize: "13px", outline: "none", marginBottom: "16px" }}>
+              <option>Professional Experience</option>
+              <option>Projects</option>
+              <option>Additional Experience</option>
+              <option>Skills</option>
+            </select>
+            <button onClick={() => {
+              if (!addManualBullet.trim()) return;
+              onAddBullet(addManualBullet.trim(), addManualSection);
+              close();
+            }} style={{ width: "100%", padding: "12px", border: "none", borderRadius: "8px", background: ACCENT, color: "#000", fontSize: "14px", fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>Add to Resume</button>
+          </div>
+        )}
+
+        {/* MODE: TRANSLATE */}
+        {mode === "translate" && (
+          <div>
+            <button onClick={() => setMode("choose")} style={{ background: "none", border: "none", color: ACCENT, cursor: "pointer", fontSize: "12px", marginBottom: "12px", padding: 0 }}>← Back</button>
+            {loading ? (
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <Loader2 size={24} color={ACCENT} style={{ animation: "spin 1s linear infinite" }} />
+                <p style={{ fontSize: "13px", color: MUTED, marginTop: "12px" }}>Analyzing your vault for relevant experience...</p>
+              </div>
+            ) : (
+              <div>
+                {qResult && !qResult.can_be_bridged && translations.length === 0 && (
+                  <div style={{ background: "rgba(239,68,68,0.08)", border: `1px solid rgba(239,68,68,0.2)`, borderRadius: "8px", padding: "14px", marginBottom: "12px" }}>
+                    <p style={{ fontSize: "13px", fontWeight: 600, color: DANGER, margin: "0 0 6px" }}>No honest bridge found</p>
+                    <p style={{ fontSize: "13px", color: "#c4c4cc", margin: 0, lineHeight: 1.6 }}>{qResult.reasoning}</p>
+                  </div>
+                )}
+                {translations.map((t, i) => (
+                  <TranslationCard key={i} t={t} onAdd={() => { onAddBullet(t.translated_bullet, t.section_to_add_to); close(); }} />
+                ))}
+                {!translations.length && !qResult && (
+                  <p style={{ fontSize: "13px", color: MUTED }}>No results yet.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* MODE: QUESTIONNAIRE */}
+        {mode === "questionnaire" && (
+          <div>
+            <button onClick={() => setMode("choose")} style={{ background: "none", border: "none", color: ACCENT, cursor: "pointer", fontSize: "12px", marginBottom: "12px", padding: 0 }}>← Back</button>
+            <p style={{ fontSize: "12px", color: MUTED, marginBottom: "16px", lineHeight: 1.6, fontStyle: "italic" }}>
+              Answer honestly — I'll use only what you tell me. If the answers don't reveal real experience, I'll tell you so rather than fake it.
+            </p>
+
+            {/* Past conversation */}
+            {qConversation.map((qa, i) => (
+              <div key={i} style={{ marginBottom: "14px", paddingBottom: "14px", borderBottom: `1px dashed ${BORDER}` }}>
+                <p style={{ fontSize: "12px", fontWeight: 600, color: ACCENT, margin: "0 0 4px" }}>Q{i + 1}: {qa.question}</p>
+                <p style={{ fontSize: "13px", color: "#c4c4cc", margin: 0, lineHeight: 1.6 }}>{qa.answer}</p>
+              </div>
+            ))}
+
+            {loading && (
+              <div style={{ textAlign: "center", padding: "20px 0" }}>
+                <Loader2 size={20} color={ACCENT} style={{ animation: "spin 1s linear infinite" }} />
+                <p style={{ fontSize: "12px", color: MUTED, marginTop: "8px" }}>Thinking...</p>
+              </div>
+            )}
+
+            {/* Current question */}
+            {!loading && qCurrent && (
+              <div>
+                <p style={{ fontSize: "14px", fontWeight: 600, color: TEXT, marginBottom: "12px" }}>Q{qConversation.length + 1}: {qCurrent.question}</p>
+                {qCurrent.purpose && <p style={{ fontSize: "11px", color: MUTED, fontStyle: "italic", marginBottom: "10px" }}>({qCurrent.purpose})</p>}
+                <textarea value={qAnswer} onChange={e => setQAnswer(e.target.value)}
+                  placeholder="Your answer..."
+                  style={{ width: "100%", minHeight: "90px", padding: "12px", background: BG, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT, fontFamily: "'DM Sans', sans-serif", fontSize: "13px", resize: "vertical", outline: "none", boxSizing: "border-box", marginBottom: "10px" }} />
+                <button onClick={submitAnswer} disabled={!qAnswer.trim()} style={{ width: "100%", padding: "10px", border: "none", borderRadius: "8px", background: qAnswer.trim() ? ACCENT : BORDER, color: qAnswer.trim() ? "#000" : MUTED, fontSize: "13px", fontWeight: 700, cursor: qAnswer.trim() ? "pointer" : "not-allowed", fontFamily: "'DM Sans', sans-serif" }}>Submit Answer</button>
+              </div>
+            )}
+
+            {/* Result */}
+            {!loading && !qCurrent && qResult && (
+              <div>
+                {qResult.can_be_bridged ? (
+                  <div>
+                    <div style={{ background: "rgba(34,197,94,0.08)", border: `1px solid rgba(34,197,94,0.2)`, borderRadius: "8px", padding: "14px", marginBottom: "16px" }}>
+                      <p style={{ fontSize: "13px", fontWeight: 600, color: SUCCESS, margin: "0 0 6px" }}>Real experience found</p>
+                      <p style={{ fontSize: "13px", color: "#c4c4cc", margin: 0, lineHeight: 1.6 }}>{qResult.assessment}</p>
+                    </div>
+                    {translations.map((t, i) => (
+                      <TranslationCard key={i} t={t} onAdd={() => { onAddBullet(t.translated_bullet, t.section_to_add_to); close(); }} />
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ background: "rgba(239,68,68,0.08)", border: `1px solid rgba(239,68,68,0.2)`, borderRadius: "8px", padding: "14px", marginBottom: "16px" }}>
+                      <p style={{ fontSize: "13px", fontWeight: 600, color: DANGER, margin: "0 0 6px" }}>This gap can't be bridged honestly</p>
+                      <p style={{ fontSize: "13px", color: "#c4c4cc", margin: "0 0 10px", lineHeight: 1.6 }}>{qResult.assessment}</p>
+                      {qResult.recommendation && <p style={{ fontSize: "13px", color: TEXT, margin: 0, lineHeight: 1.6 }}><strong style={{ color: ACCENT }}>Recommendation:</strong> {qResult.recommendation}</p>}
+                    </div>
+                    <button onClick={close} style={{ width: "100%", padding: "10px", border: `1px solid ${BORDER}`, borderRadius: "8px", background: "transparent", color: TEXT, fontSize: "13px", cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>Close</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChoiceButton({ onClick, icon, title, subtitle }) {
+  return (
+    <button onClick={onClick} style={{
+      width: "100%", padding: "14px 16px", background: BG, border: `1px solid ${BORDER}`,
+      borderRadius: "8px", cursor: "pointer", textAlign: "left",
+      fontFamily: "'DM Sans', sans-serif", transition: "all 0.2s",
+      display: "flex", gap: "12px", alignItems: "center",
+    }}
+    onMouseOver={e => e.currentTarget.style.borderColor = ACCENT}
+    onMouseOut={e => e.currentTarget.style.borderColor = BORDER}>
+      <span style={{ fontSize: "22px" }}>{icon}</span>
+      <div>
+        <p style={{ fontSize: "14px", fontWeight: 600, color: TEXT, margin: "0 0 2px" }}>{title}</p>
+        <p style={{ fontSize: "12px", color: MUTED, margin: 0, lineHeight: 1.4 }}>{subtitle}</p>
+      </div>
+    </button>
+  );
+}
+
+function TranslationCard({ t, onAdd }) {
+  return (
+    <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "14px", marginBottom: "10px" }}>
+      <div style={{ marginBottom: "10px" }}>
+        <p style={{ fontSize: "11px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 4px" }}>Source</p>
+        <p style={{ fontSize: "12px", color: "#c4c4cc", margin: 0, lineHeight: 1.5 }}>{t.source_activity}</p>
+      </div>
+      <div style={{ marginBottom: "10px" }}>
+        <p style={{ fontSize: "11px", fontWeight: 600, color: ACCENT, textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 4px" }}>Resume Bullet</p>
+        <p style={{ fontSize: "13px", color: TEXT, margin: 0, fontWeight: 500, lineHeight: 1.5 }}>{t.translated_bullet}</p>
+      </div>
+      {t.context_note && (
+        <div style={{ background: "rgba(113,113,122,0.1)", borderLeft: `2px solid ${MUTED}`, padding: "6px 10px", marginBottom: "10px", borderRadius: "0 4px 4px 0" }}>
+          <p style={{ fontSize: "11px", color: MUTED, margin: 0, fontStyle: "italic", lineHeight: 1.4 }}>{t.context_note}</p>
+        </div>
+      )}
+      <button onClick={onAdd} style={{ width: "100%", padding: "8px", border: `1px solid ${ACCENT}`, borderRadius: "6px", background: "transparent", color: ACCENT, fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>
+          + Add to {t.section_to_add_to || "Resume"}
+      </button>
+    </div>
+  );
 }
