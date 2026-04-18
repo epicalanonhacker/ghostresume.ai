@@ -233,11 +233,12 @@ async def run_pipeline(request: PipelineRequest):
 
 You use the "Ghost Resume" methodology:
 1. FIRST: Parse the uploaded resume into a structured vault — extract every skill, experience entry, bullet point, metric, and education item into a tagged, organized format. This vault is your source of truth.
-2. Parse the job posting and classify requirements by signal strength (dealbreaker / strong / bonus)
-3. Analyze the CEO's pain — WHY they're hiring, not just what they want
-4. Generate the ideal candidate's resume for this role (the ghost)
-5. Map the vault's real experience onto the ghost resume's structure
-6. Generate gap report, cover letter, interview prep, ATS score
+2. VOICE PRINT: Analyze HOW the candidate naturally writes — sentence length, vocabulary level, formality, action verb preferences, whether they lead with results or context, use of jargon vs plain language. The tailored output must sound like a BETTER version of them, not a different person.
+3. Parse the job posting and classify requirements by signal strength (dealbreaker / strong / bonus)
+4. Analyze the CEO's pain — WHY they're hiring, not just what they want
+5. Generate the ideal candidate's resume for this role (the ghost)
+6. Map the vault's real experience onto the ghost resume's structure, honoring the voice print
+7. Generate gap report, cover letter, interview prep, ATS score
 
 CRITICAL RULES:
 - NEVER fabricate experience. Only reframe what the candidate actually has in their vault.
@@ -246,6 +247,24 @@ CRITICAL RULES:
 - Address the CEO's pain in the professional summary and top bullets.
 - ALWAYS extract the candidate's full contact info (name, email, phone, location, linkedin) from the resume.
 - For the cover letter: search for the company's physical address and hiring manager name. Format as a proper business letter.
+- VOICE CONSISTENCY: Every bullet, the summary, and the cover letter must match the voice_print. If the candidate writes in short punchy sentences, the output uses short punchy sentences. If they use technical jargon naturally, keep it. The output should feel like the candidate on their best day, not like a different person wrote it.
+
+COVER LETTER HOOK PHILOSOPHY:
+The hook must be COMPANY-SITUATION-CENTRIC, not candidate-centric.
+
+BAD hooks (candidate-centric — recruiters are starting to pattern-match these):
+- "I built X from a Y" (humble brag opener)
+- "Most developers do X, but I do Y" (contrast template)
+- "With N years of experience in X..." (resume summary)
+
+GOOD hooks (company-situation-centric — makes the recruiter think about THEIR problem):
+- Reference a specific challenge or opportunity the company is facing that most applicants wouldn't notice
+- Frame an insight about the company's situation that the next sentence proves the candidate understands deeply
+- Make the recruiter think "how does this person know about that?" — then the letter answers it
+
+The hook should make the recruiter forget they're reading a cover letter and start thinking about their own problem. The candidate enters as the person who already understands it.
+
+Write the full letter BODY first, then re-read it and REPLACE the first line with a company-situation-centric hook. The contact header, date, and recipient info go in separate fields — NOT in full_text.
 
 SKILL TRANSLATION PHILOSOPHY (for the gap_report.skill_translations field):
 Think of yourself as a lawyer presenting your client in the best possible light — you stretch the truth professionally, you never fabricate it. If the candidate mentions non-traditional experience (gaming, content creation, hobbies, volunteering, unconventional projects), identify real hard/soft skills those activities demonstrated and translate them into professional language.
@@ -261,8 +280,6 @@ Rules for skill translation:
 - NEVER invent job titles, company names, or paid employment
 - ALWAYS include a context_note explaining where/how to honestly frame it (Personal Projects section, interview discussion, etc.)
 - If the candidate's resume has no gaps that need closing this way, return an empty skill_translations array
-
-For the cover letter: write the full letter BODY first, then re-read it and REPLACE the first line with a hook. The contact header, date, and recipient info go in separate fields — NOT in full_text.
 
 Respond ONLY with valid JSON (no markdown fences):
 {
@@ -283,6 +300,13 @@ Respond ONLY with valid JSON (no markdown fences):
     "location": "string (city, state from resume)",
     "linkedin": "string or null (from resume if present)"
   },
+  "voice_print": {
+    "sentence_style": "string (short_punchy | flowing | mixed)",
+    "formality": "string (casual | professional | corporate)",
+    "vocabulary_level": "string (plain | technical | mixed)",
+    "leads_with": "string (results | context | action)",
+    "personality_notes": "string (brief description of their natural writing voice)"
+  },
   "vault": {
     "skills": [{"name": "string", "proficiency": "string", "tags": ["string"]}],
     "experience": [{"company": "string", "role": "string", "dates": "string", "bullets": [{"text": "string", "tags": ["string"], "metrics": "string or null"}]}],
@@ -299,7 +323,7 @@ Respond ONLY with valid JSON (no markdown fences):
     "recipient_title": "string or null",
     "company_name": "string",
     "company_address": "string (full street address of company, searched via web — e.g. '1901 Ulmerton Road, Clearwater, FL 33762')",
-    "hook_line": "string",
+    "hook_line": "string (COMPANY-SITUATION-CENTRIC — about their problem, not the candidate's achievement)",
     "original_first_line": "string",
     "full_text": "string (BODY ONLY — the 3 paragraphs, no header/date/address, no sign-off name)",
     "sign_off": "string (e.g. 'Sincerely,' or 'Best regards,')"
@@ -897,6 +921,73 @@ async def generate_document(request: DocumentRequest):
         filename=filename,
         media_type="application/pdf" if ext == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
+
+
+# ============================================================
+# OUTCOME TRACKING
+# ============================================================
+OUTCOMES_PATH = OUTPUT_DIR / "outcomes.json"
+
+
+class OutcomeReport(BaseModel):
+    session_id: str
+    company: str = ""
+    role: str = ""
+    outcome: str  # "got_interview" | "got_offer" | "rejected" | "no_response"
+    notes: str = ""
+
+
+def _load_outcomes():
+    if OUTCOMES_PATH.exists():
+        with open(OUTCOMES_PATH) as f:
+            return json.load(f)
+    return {"outcomes": [], "stats": {"total": 0, "interviews": 0, "offers": 0, "rejections": 0, "no_response": 0}}
+
+
+def _save_outcomes(data):
+    with open(OUTCOMES_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+@app.post("/api/report-outcome")
+async def report_outcome(report: OutcomeReport):
+    """User reports what happened after applying."""
+    outcomes = _load_outcomes()
+    outcomes["outcomes"].append({
+        "session_id": report.session_id,
+        "company": report.company,
+        "role": report.role,
+        "outcome": report.outcome,
+        "notes": report.notes,
+        "timestamp": datetime.now().isoformat(),
+    })
+    outcomes["stats"]["total"] += 1
+    if report.outcome == "got_interview":
+        outcomes["stats"]["interviews"] += 1
+    elif report.outcome == "got_offer":
+        outcomes["stats"]["offers"] += 1
+    elif report.outcome == "rejected":
+        outcomes["stats"]["rejections"] += 1
+    elif report.outcome == "no_response":
+        outcomes["stats"]["no_response"] += 1
+    _save_outcomes(outcomes)
+    return {"status": "recorded", "stats": outcomes["stats"]}
+
+
+@app.get("/api/stats")
+async def get_stats():
+    """Public aggregate stats for social proof on landing page."""
+    outcomes = _load_outcomes()
+    sessions_count = len(list(OUTPUT_DIR.glob("*.json"))) - 1  # minus outcomes.json
+    stats = outcomes["stats"]
+    interview_rate = round((stats["interviews"] + stats["offers"]) / max(stats["total"], 1) * 100)
+    return {
+        "total_resumes_tailored": max(sessions_count, 0),
+        "outcomes_reported": stats["total"],
+        "interview_rate": interview_rate,
+        "interviews": stats["interviews"],
+        "offers": stats["offers"],
+    }
 
 
 @app.get("/health")

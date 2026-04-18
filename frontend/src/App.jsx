@@ -212,6 +212,7 @@ export default function GhostResumeApp() {
   const [gapModal, setGapModal] = useState(null); // { gap, strategy, mode, ...state }
   const [addedBullets, setAddedBullets] = useState([]); // bullets added to resume via gap closer
   const [addedSkills, setAddedSkills] = useState([]); // skills added from translator
+  const [outcomeReported, setOutcomeReported] = useState(false);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
@@ -268,7 +269,7 @@ export default function GhostResumeApp() {
   const resetAll = () => {
     setScreen("upload"); setResults(null); setResumeText(""); setResumeFileName("");
     setResumeFile(null); setUploadFormat("txt"); setJobUrl(""); setJobText(""); setActiveTab("resume");
-    setGapModal(null); setAddedBullets([]); setAddedSkills([]);
+    setGapModal(null); setAddedBullets([]); setAddedSkills([]); setOutcomeReported(false);
   };
 
   // Merge added bullets/skills into the tailored resume for display and download
@@ -383,9 +384,9 @@ export default function GhostResumeApp() {
         </button>
 
         <div style={{ marginTop: "48px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px" }}>
-          {[{ icon: <Ghost size={20} />, title: "Ghost Resume", desc: "We build the ideal candidate first" },
-            { icon: <Target size={20} />, title: "Reality Map", desc: "Your real experience, reframed" },
-            { icon: <Shield size={20} />, title: "ATS Optimized", desc: "Keyword-matched to beat the bots" }
+          {[{ icon: <Ghost size={20} />, title: "Ghost Resume", desc: "We build the ideal candidate first — the blueprint for what this recruiter wants to see" },
+            { icon: <Target size={20} />, title: "Reality Map", desc: "Your real experience reframed to match, not generic keyword stuffing" },
+            { icon: <Shield size={20} />, title: "Your Voice", desc: "Output sounds like you on your best day — not like AI wrote it" }
           ].map((item, i) => (
             <div key={i} style={{ padding: "20px 16px", background: CARD, borderRadius: "10px", border: `1px solid ${BORDER}`, textAlign: "center" }}>
               <div style={{ color: ACCENT, marginBottom: "8px", display: "flex", justifyContent: "center" }}>{item.icon}</div>
@@ -393,6 +394,42 @@ export default function GhostResumeApp() {
               <div style={{ fontSize: "12px", color: MUTED }}>{item.desc}</div>
             </div>
           ))}
+        </div>
+
+        {/* Methodology Section */}
+        <div style={{ marginTop: "48px" }}>
+          <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "8px", textAlign: "center" }}>
+            Not another <span style={{ textDecoration: "line-through", color: MUTED }}>keyword stuffer</span>
+          </h2>
+          <p style={{ fontSize: "14px", color: MUTED, textAlign: "center", marginBottom: "28px", lineHeight: 1.6 }}>
+            Most resume tools rewrite your bullets with the posting's words and call it "tailored." We do something different.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "2px" }}>
+            {[
+              { step: "1", title: "We decode WHY they're hiring", desc: "Every open role is a business problem someone's paying to solve. We identify the CEO's pain — not just what they want, but what's keeping them up at night.", color: WARNING },
+              { step: "2", title: "We build the perfect candidate", desc: "Before touching your resume, we create a 'ghost' — what the ideal applicant's resume would look like for THIS specific role. Structure, emphasis, keywords, tone.", color: ACCENT },
+              { step: "3", title: "We map YOUR story onto it", desc: "Your real accomplishments get reframed to fit the ghost's blueprint. Same truth, different framing. We never fabricate — we translate.", color: SUCCESS },
+              { step: "4", title: "We match YOUR voice", desc: "We analyze how you naturally write and make sure the output sounds like you. Short punchy sentences? Kept. Technical jargon? Kept. The result reads like your best day, not a stranger's.", color: "#c084fc" },
+            ].map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: "16px", padding: "16px", background: CARD, borderRadius: i === 0 ? "10px 10px 0 0" : i === 3 ? "0 0 10px 10px" : "0", border: `1px solid ${BORDER}` }}>
+                <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: `${s.color}15`, color: s.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "14px", flexShrink: 0 }}>{s.step}</div>
+                <div>
+                  <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "4px" }}>{s.title}</div>
+                  <div style={{ fontSize: "12px", color: MUTED, lineHeight: 1.6 }}>{s.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Objection Killer */}
+        <div style={{ marginTop: "32px", background: CARD, borderRadius: "10px", border: `1px solid ${BORDER}`, padding: "20px 24px" }}>
+          <p style={{ fontSize: "14px", fontWeight: 600, margin: "0 0 8px", color: TEXT }}>
+            "Won't it sound like AI wrote it?"
+          </p>
+          <p style={{ fontSize: "13px", color: MUTED, margin: 0, lineHeight: 1.7 }}>
+            That's the exact problem we engineered against. GhostResume extracts your <span style={{ color: ACCENT }}>voice print</span> before rewriting anything — your sentence rhythm, vocabulary, formality level, even whether you lead with results or context. The output is constrained to match. If you read it and think "I wouldn't say it like that," the tool failed. Most people read it and think "I wish I'd written it that way." That's the target.
+          </p>
         </div>
       </div>
     </div>
@@ -471,6 +508,30 @@ export default function GhostResumeApp() {
               </div>
             </div>
           </div>
+
+          {/* Voice Print */}
+          {r.voice_print && (
+            <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "16px 20px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+              <div style={{ fontSize: "12px", fontWeight: 600, color: "#c084fc", textTransform: "uppercase", letterSpacing: "1px", flexShrink: 0 }}>Voice Print</div>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {[
+                  { label: r.voice_print.sentence_style, icon: "✏️" },
+                  { label: r.voice_print.formality, icon: "🎯" },
+                  { label: r.voice_print.vocabulary_level, icon: "📚" },
+                  { label: `leads with ${r.voice_print.leads_with}`, icon: "→" },
+                ].map((v, i) => (
+                  <span key={i} style={{ fontSize: "11px", padding: "4px 10px", borderRadius: "20px", background: "rgba(192,132,252,0.1)", color: "#c084fc", fontWeight: 500 }}>
+                    {v.icon} {v.label}
+                  </span>
+                ))}
+              </div>
+              {r.voice_print.personality_notes && (
+                <p style={{ fontSize: "12px", color: MUTED, margin: 0, fontStyle: "italic", flex: "1 1 100%" }}>
+                  {r.voice_print.personality_notes}
+                </p>
+              )}
+            </div>
+          )}
 
           <div style={{ borderBottom: `1px solid ${BORDER}`, marginBottom: "24px", display: "flex", gap: "4px", flexWrap: "wrap" }}>
             <TabButton active={activeTab === "resume"} onClick={() => setActiveTab("resume")}><FileText size={14} style={{marginRight:6,verticalAlign:"middle"}} />Resume</TabButton>
@@ -554,7 +615,7 @@ export default function GhostResumeApp() {
                 <p style={{ fontSize: "13px", color: MUTED, margin: 0, textDecoration: "line-through" }}>{r.cover_letter.original_first_line}</p>
               </div>)}
               {r.cover_letter.hook_line && (<div style={{ background: ACCENT_DIM, border: "1px solid rgba(0,212,255,0.2)", borderRadius: "8px", padding: "12px 16px", marginBottom: "20px" }}>
-                <div style={{ fontSize: "11px", fontWeight: 600, color: ACCENT, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Hook Line</div>
+                <div style={{ fontSize: "11px", fontWeight: 600, color: ACCENT, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Company-Situation Hook</div>
                 <p style={{ fontSize: "15px", fontWeight: 600, color: TEXT, margin: 0 }}>{r.cover_letter.hook_line}</p>
               </div>)}
               <div style={{ background: BG, borderRadius: "8px", padding: "24px", border: `1px solid ${BORDER}`, whiteSpace: "pre-wrap", fontSize: "14px", lineHeight: 1.8, color: "#c4c4cc" }}>{r.cover_letter.full_text}</div>
@@ -733,6 +794,45 @@ export default function GhostResumeApp() {
               </div>)}
             </div>)}
 
+          </div>
+        </div>
+
+        {/* OUTCOME REPORTING */}
+        <div style={{ maxWidth: "900px", margin: "24px auto 0", padding: "0 24px" }}>
+          <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "20px 24px" }}>
+            {outcomeReported ? (
+              <div style={{ textAlign: "center" }}>
+                <p style={{ fontSize: "14px", color: SUCCESS, fontWeight: 600, margin: 0 }}>Thanks for reporting back — this helps everyone.</p>
+              </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: "14px", fontWeight: 600, margin: "0 0 4px", color: TEXT }}>After you apply, let us know what happened</p>
+                <p style={{ fontSize: "12px", color: MUTED, margin: "0 0 14px" }}>This helps us improve the tool and show real results to other users.</p>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {[
+                    { label: "Got an Interview", value: "got_interview", color: SUCCESS },
+                    { label: "Got an Offer", value: "got_offer", color: ACCENT },
+                    { label: "Rejected", value: "rejected", color: DANGER },
+                    { label: "No Response", value: "no_response", color: MUTED },
+                  ].map((o, i) => (
+                    <button key={i} onClick={async () => {
+                      try {
+                        await fetch(`${API_BASE}/api/report-outcome`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ session_id: r.session_id || "", company: r.company, role: r.role, outcome: o.value }),
+                        });
+                        setOutcomeReported(true);
+                      } catch (e) { setOutcomeReported(true); }
+                    }} style={{
+                      padding: "8px 16px", border: `1px solid ${o.color}30`, borderRadius: "6px",
+                      background: `${o.color}10`, color: o.color, fontSize: "12px", fontWeight: 600,
+                      cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                    }}>{o.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
