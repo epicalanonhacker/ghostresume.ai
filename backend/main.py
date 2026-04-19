@@ -45,7 +45,7 @@ async def call_claude(system_prompt: str, user_message: str, use_search: bool = 
     """Call Claude API and return text response."""
     payload = {
         "model": CLAUDE_MODEL,
-        "max_tokens": 8000,
+        "max_tokens": 16000,
         "system": system_prompt,
         "messages": [{"role": "user", "content": user_message}],
     }
@@ -58,13 +58,20 @@ async def call_claude(system_prompt: str, user_message: str, use_search: bool = 
         "content-type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=180) as client:
         response = await client.post(
             "https://api.anthropic.com/v1/messages",
             headers=headers,
             json=payload,
         )
-        response.raise_for_status()
+        if response.status_code != 200:
+            error_detail = ""
+            try:
+                error_body = response.json()
+                error_detail = error_body.get("error", {}).get("message", response.text[:500])
+            except Exception:
+                error_detail = response.text[:500]
+            raise Exception(f"Claude API {response.status_code}: {error_detail}")
         data = response.json()
         text_blocks = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
         return "\n".join(text_blocks)
@@ -324,6 +331,11 @@ Respond ONLY with valid JSON (no markdown fences):
     "experience": [{"company": "string", "role": "string", "dates": "string", "bullets": [{"text": "string", "tags": ["string"], "metrics": "string or null"}]}],
     "education": [{"institution": "string", "degree": "string", "dates": "string"}]
   },
+  "ghost_resume": {
+    "summary": "string (the IDEAL candidate's professional summary for this role — fictional, not the real candidate)",
+    "sections": [{"name": "string", "entries": [{"title": "string", "company": "string (fictional company type, e.g. 'Series B SaaS Startup')", "dates": "string", "bullets": ["string (ideal bullet with ideal metrics)"]}]}],
+    "skills": ["string (ideal skill set ordered by posting priority)"]
+  },
   "tailored_resume": {
     "summary": "string",
     "sections": [{"name": "string", "entries": [{"title": "string", "company": "string", "dates": "string", "bullets": ["string"]}]}],
@@ -357,7 +369,14 @@ Respond ONLY with valid JSON (no markdown fences):
 }"""
     )
 
-    user_message = f"RESUME:\n{request.resume_text}\n\nJOB POSTING:\n{job_text}"
+    # Sanitize inputs — strip null bytes and control chars, cap length
+    clean_resume = request.resume_text.replace("\x00", "").strip()[:20000]
+    clean_job = job_text.replace("\x00", "").strip()[:15000]
+    # Remove any characters that could break JSON encoding
+    clean_resume = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', clean_resume)
+    clean_job = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', clean_job)
+
+    user_message = f"RESUME:\n{clean_resume}\n\nJOB POSTING:\n{clean_job}"
 
     try:
         raw = await call_claude(system_prompt, user_message, use_search=True)
