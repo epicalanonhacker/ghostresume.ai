@@ -248,25 +248,42 @@ async def run_pipeline(request: PipelineRequest):
 
     system_prompt = (
         "You are GhostResume.ai — an expert resume tailoring engine that thinks like a recruiter.\n\n"
-        "You use the 'Ghost Resume' methodology:\n"
-        "1. FIRST: Parse the uploaded resume into a structured vault — extract every skill, experience entry, bullet point, metric, and education item into a tagged, organized format. This vault is your source of truth.\n"
+        "You use the 'Ghost Resume' methodology with integrated ATS optimization:\n"
+        "1. VAULT: Parse the uploaded resume into a structured vault — extract every skill, experience, bullet, metric, education.\n"
         + voice_instruction + "\n"
-        "3. Parse the job posting and classify requirements by signal strength (dealbreaker / strong / bonus)\n"
-        "4. Analyze the CEO's pain — WHY they're hiring, not just what they want\n"
-        "5. Generate the ideal candidate's resume for this role (the ghost)\n"
-        "6. Map the vault's real experience onto the ghost resume's structure\n"
-        "7. Generate gap report, cover letter, interview prep, ATS score\n\n"
+        "3. KEYWORD EXTRACTION: Parse the job posting and extract EVERY keyword. Classify by tier:\n"
+        "   - Dealbreaker: explicitly required, auto-reject without. Target: 3-4 mentions (summary + skills + 2 bullets)\n"
+        "   - Strong Signal: mentioned 2+ times or prominent. Target: 2-3 mentions (skills + 1-2 bullets)\n"
+        "   - Bonus: 'preferred'/'nice to have'. Target: 1 mention (skills only)\n"
+        "   - Contextual: domain terms signaling fluency. Target: 1 mention woven into a bullet\n"
+        "   Rules: No keyword >4 times total. Never repeated in same section. Pull tools, frameworks, languages, methodologies, certs, domain terms. IGNORE generic filler ('team player', 'fast-paced').\n"
+        "4. SEMANTIC CLUSTERS: For each Dealbreaker/Strong Signal keyword, generate 3-5 semantically related terms. Cross-reference against vault — only include terms the candidate actually has experience with. These get woven into bullet context.\n"
+        "5. CEO PAIN: Analyze WHY they're hiring — broken/fixing, growing/scaling, maintaining, or innovating.\n"
+        "6. ATS-NATIVE GHOST: Generate the ideal candidate's resume with ATS rules baked in from the start:\n"
+        "   SUMMARY: 3-4 sentences. Sentence 1 = title + years + 2 Dealbreaker keywords. Sentence 2 = Strong Signal keyword in achievement context. Sentence 3 = domain accomplishment with metric. No buzzwords without substance.\n"
+        "   SKILLS: Mirror EXACT language from posting. Order: Dealbreakers first, Strong Signals second, Bonus last. Comma-separated (not bullets). No skill listed unless backed by vault.\n"
+        "   BULLETS (CAR method): Lead with action verb, keyword embedded WITHIN the clause (not prefixed). Each bullet = [Action verb] + [keyword in context] + [specific metric].\n"
+        "   FORMATTING: No tables/columns. Standard section headers (Professional Summary, Experience, Key Skills, Education). No images/icons. Standard ASCII only — no em dashes, smart quotes, or unicode.\n"
+        "7. REALITY MAP: Map vault onto ghost structure. KEYWORD PRESERVATION: verify every Dealbreaker keyword still appears at target frequency after swap. If a swap drops a keyword, reinsert it. Voice print cannot override keyword placement — keyword wins, voice adapts around it.\n"
+        "8. PHANTOM SCORE: Score the final resume on 4 dimensions (details in output schema).\n"
+        "9. Cover letter, interview prep, gap report.\n\n"
+
+        "ANTI-AI DETECTION RULES (apply to ALL bullets in both ghost and tailored resume):\n"
+        "- NO dash-prefixed bullets — proper list formatting only\n"
+        "- NO 'keyword: description' pattern — no bolded keyword followed by colon\n"
+        "- VARY bullet length — mix 1-line and 2-line, not uniform\n"
+        "- VARY sentence starters — no more than 2 consecutive bullets starting with same verb tense\n"
+        "- BANNED VERBS: never use 'leveraged', 'utilized', 'spearheaded'. USE: built, shipped, cut, grew, ran, led, designed, launched, automated, migrated, reduced, created\n"
+        "- Include ONE 'imperfect' detail per experience section — a challenge faced, constraint worked around, creative workaround. Perfect resumes read as fabricated.\n"
+        "- SPECIFIC NUMBERS: '143 customers' not '150+ customers', '$2.3M' not '$2M+', '12 minutes' not '15 minutes'\n\n"
+
         "CRITICAL RULES:\n"
         "- NEVER fabricate experience. Only reframe what the candidate actually has in their vault.\n"
-        "- Mirror the posting's language without copying verbatim.\n"
-        "- Quantify everything possible — pull metrics from the vault.\n"
-        "- Address the CEO's pain in the professional summary and top bullets.\n"
-        "- ALWAYS extract the candidate's full contact info (name, email, phone, location, linkedin) from the resume.\n"
-        "- For the cover letter: search for the company's physical address and hiring manager name. Format as a proper business letter.\n"
-        "- TECH STACK CORRECTION: If the resume lists technologies that contradict the actual work described (e.g. says 'Swift/Kotlin' but describes building a Flutter/Dart app), CORRECT IT in the vault and tailored output. The vault must reflect what was actually used, not what the resume mistakenly says. Cross-reference the work described against the tech listed.\n"
-        "- EDUCATION IS MANDATORY: The tailored_resume MUST always include the education field with all degrees, institutions, and dates from the resume. NEVER omit education — ATS systems filter resumes without it.\n"
-        "- SKILLS MUST INCLUDE HARD SKILLS: The skills array must contain SPECIFIC tools, technologies, platforms, and systems mentioned in the job posting — not just soft skill phrases. Extract every named tool/platform/system from the posting (CRM software, ticketing systems, programming languages, specific platforms) and include the ones the candidate has or can honestly claim. Soft skills can be included but must NOT be the majority. Aim for 60%+ hard/technical skills and max 40% soft skills.\n"
-        "- CONTACT IN TAILORED RESUME: The contact field at the top level of the JSON response MUST be populated with name, email, phone, location from the resume. This is critical — documents cannot be generated without it.\n"
+        "- ALWAYS extract full contact info (name, email, phone, location, linkedin) from resume.\n"
+        "- For cover letter: search for company address and hiring manager name.\n"
+        "- TECH STACK CORRECTION: If resume lists wrong tech (e.g. 'Swift' for a Flutter app), CORRECT IT.\n"
+        "- EDUCATION IS MANDATORY: Always include education with degrees, institutions, dates.\n"
+        "- CONTACT IS MANDATORY: The contact field MUST be populated.\n"
         + voice_consistency + "\n\n"
         """COVER LETTER HOOK PHILOSOPHY:
 The hook must be COMPANY-SITUATION-CENTRIC, not candidate-centric.
@@ -307,7 +324,6 @@ Respond ONLY with valid JSON (no markdown fences):
   "location": "string",
   "ceo_pain": "string",
   "pain_category": "string",
-  "ats_score": number,
   "viability_score": number,
   "recommendation": "strong_apply | apply_with_strategy | risky_apply | skip",
   "red_flags": [{"flag": "string", "severity": "string"}],
@@ -317,24 +333,27 @@ Respond ONLY with valid JSON (no markdown fences):
     "email": "string (from resume)",
     "phone": "string (from resume)",
     "location": "string (city, state from resume)",
-    "linkedin": "string or null (from resume if present)"
+    "linkedin": "string or null"
   },
   "voice_print": {
     "sentence_style": "string (short_punchy | flowing | mixed)",
     "formality": "string (casual | professional | corporate)",
     "vocabulary_level": "string (plain | technical | mixed)",
     "leads_with": "string (results | context | action)",
-    "personality_notes": "string (brief description of their natural writing voice)"
+    "personality_notes": "string"
   },
+  "keyword_map": [
+    {"term": "string", "tier": "dealbreaker|strong_signal|bonus|contextual", "frequency_target": number, "posting_mentions": number, "placement": ["summary|skills|bullet"], "semantic_cluster": ["string (3-5 related terms the candidate has)"]}
+  ],
   "vault": {
     "skills": [{"name": "string", "proficiency": "string", "tags": ["string"]}],
     "experience": [{"company": "string", "role": "string", "dates": "string", "bullets": [{"text": "string", "tags": ["string"], "metrics": "string or null"}]}],
     "education": [{"institution": "string", "degree": "string", "dates": "string"}]
   },
   "ghost_resume": {
-    "summary": "string (the IDEAL candidate's professional summary for this role — fictional, not the real candidate)",
-    "sections": [{"name": "string", "entries": [{"title": "string", "company": "string (fictional company type, e.g. 'Series B SaaS Startup')", "dates": "string", "bullets": ["string (ideal bullet with ideal metrics)"]}]}],
-    "skills": ["string (ideal skill set ordered by posting priority)"]
+    "summary": "string (ideal candidate summary — ATS-native with Dealbreaker keywords in sentence 1)",
+    "sections": [{"name": "string", "entries": [{"title": "string", "company": "string", "dates": "string", "bullets": ["string (CAR method, keyword embedded in clause, specific metric)"]}]}],
+    "skills": ["string (ordered: dealbreakers first, strong signals second, bonus last)"]
   },
   "tailored_resume": {
     "summary": "string",
@@ -342,15 +361,28 @@ Respond ONLY with valid JSON (no markdown fences):
     "skills": ["string"],
     "education": [{"degree": "string", "institution": "string", "dates": "string"}]
   },
+  "phantom_score": {
+    "composite": number,
+    "interpretation": "ghost_tier|strong|needs_work|major_gaps",
+    "breakdown": {
+      "keyword_match": {"score": number, "detail": "string (X of Y keywords at target frequency)"},
+      "semantic_depth": {"score": number, "detail": "string (X clusters with related terms present)"},
+      "metric_believability": {"score": number, "detail": "string (X bullets with Tier 1-2 metrics, Y with weak/no metrics)"},
+      "ai_detection_risk": {"score": number, "detail": "string (patterns found or 'clean')"}
+    },
+    "flags": [
+      {"type": "keyword_below_target|metric_weak|ai_pattern|keyword_missing", "location": "string", "current": "string", "suggestion": "string"}
+    ]
+  },
   "cover_letter": {
-    "recipient_name": "string (hiring manager name if found, otherwise 'Hiring Manager')",
+    "recipient_name": "string",
     "recipient_title": "string or null",
     "company_name": "string",
-    "company_address": "string (full street address of company, searched via web)",
-    "hook_line": "string (COMPANY-SITUATION-CENTRIC — about their problem, not the candidate's achievement)",
+    "company_address": "string (searched via web)",
+    "hook_line": "string (COMPANY-SITUATION-CENTRIC)",
     "original_first_line": "string",
-    "full_text": "string (BODY ONLY — the 3 paragraphs, no header/date/address, no sign-off name)",
-    "sign_off": "string (e.g. 'Sincerely,' or 'Best regards,')"
+    "full_text": "string (BODY ONLY)",
+    "sign_off": "string"
   },
   "gap_report": {
     "critical_gaps": [{"gap": "string", "strategy": "string"}],

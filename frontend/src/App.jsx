@@ -512,10 +512,15 @@ export default function GhostResumeApp() {
             <button onClick={resetAll} style={{ padding: "10px 20px", border: `1px solid ${BORDER}`, borderRadius: "8px", background: CARD, color: TEXT, fontSize: "13px", cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>New Application</button>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginBottom: "32px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginBottom: "16px" }}>
             <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "24px", textAlign: "center" }}>
-              <div style={{ fontSize: "12px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "16px" }}>ATS Score</div>
-              <GradeCircle score={r.ats_score || 0} />
+              <div style={{ fontSize: "12px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "16px" }}>Phantom Score</div>
+              <GradeCircle score={(r.phantom_score || r.ats_score) ? (r.phantom_score?.composite || r.ats_score || 0) : 0} />
+              {r.phantom_score?.interpretation && (
+                <div style={{ marginTop: "8px", fontSize: "11px", fontWeight: 600, color: (r.phantom_score.composite >= 90 ? SUCCESS : r.phantom_score.composite >= 75 ? WARNING : DANGER) }}>
+                  {(r.phantom_score.interpretation || "").replace(/_/g, " ").toUpperCase()}
+                </div>
+              )}
             </div>
             <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "24px", textAlign: "center" }}>
               <div style={{ fontSize: "12px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "16px" }}>Viability</div>
@@ -534,6 +539,85 @@ export default function GhostResumeApp() {
               </div>
             </div>
           </div>
+
+          {/* Phantom Score Breakdown */}
+          {r.phantom_score?.breakdown && (
+            <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "16px 20px", marginBottom: "16px" }}>
+              <div style={{ fontSize: "12px", fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "12px" }}>Score Breakdown</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px" }}>
+                {[
+                  { label: "Keywords", data: r.phantom_score.breakdown.keyword_match, weight: "35%" },
+                  { label: "Semantic Depth", data: r.phantom_score.breakdown.semantic_depth, weight: "20%" },
+                  { label: "Metric Quality", data: r.phantom_score.breakdown.metric_believability, weight: "20%" },
+                  { label: "Human-Passing", data: r.phantom_score.breakdown.ai_detection_risk, weight: "25%" },
+                ].map((item, i) => {
+                  const sc = item.data?.score || 0;
+                  const col = sc >= 80 ? SUCCESS : sc >= 60 ? WARNING : DANGER;
+                  return (
+                    <div key={i} style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: "22px", fontWeight: 800, color: col }}>{sc}</div>
+                      <div style={{ fontSize: "11px", fontWeight: 600, color: TEXT, marginBottom: "2px" }}>{item.label}</div>
+                      <div style={{ fontSize: "10px", color: MUTED }}>{item.weight} weight</div>
+                      {item.data?.detail && <div style={{ fontSize: "10px", color: MUTED, marginTop: "4px", lineHeight: 1.3 }}>{item.data.detail}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Phantom Score Flags */}
+          {r.phantom_score?.flags && r.phantom_score.flags.length > 0 && (
+            <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "16px 20px", marginBottom: "16px" }}>
+              <div style={{ fontSize: "12px", fontWeight: 600, color: WARNING, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px" }}>
+                Optimization Flags ({r.phantom_score.flags.length})
+              </div>
+              {r.phantom_score.flags.slice(0, 5).map((flag, i) => (
+                <div key={i} style={{ background: BG, borderRadius: "6px", padding: "10px 12px", marginBottom: "6px", border: `1px solid ${BORDER}` }}>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+                    <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px",
+                      background: flag.type === "keyword_missing" ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)",
+                      color: flag.type === "keyword_missing" ? DANGER : WARNING,
+                      whiteSpace: "nowrap", flexShrink: 0
+                    }}>{(flag.type || "").replace(/_/g, " ")}</span>
+                    <div style={{ flex: 1 }}>
+                      {flag.location && <p style={{ fontSize: "11px", color: MUTED, margin: "0 0 2px" }}>{flag.location}</p>}
+                      {flag.current && <p style={{ fontSize: "12px", color: "#c4c4cc", margin: "0 0 4px" }}>Current: {flag.current}</p>}
+                      {flag.suggestion && <p style={{ fontSize: "12px", color: SUCCESS, margin: 0 }}>Fix: {flag.suggestion}</p>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Keyword Map */}
+          {r.keyword_map && r.keyword_map.length > 0 && (
+            <details style={{ marginBottom: "16px" }}>
+              <summary style={{ fontSize: "12px", fontWeight: 600, color: MUTED, cursor: "pointer", textTransform: "uppercase", letterSpacing: "1px", padding: "10px 16px", background: CARD, border: `1px solid ${BORDER}`, borderRadius: "8px" }}>
+                Keyword Map ({r.keyword_map.length} keywords extracted)
+              </summary>
+              <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderTop: "none", borderRadius: "0 0 8px 8px", padding: "16px" }}>
+                {["dealbreaker", "strong_signal", "bonus", "contextual"].map(tier => {
+                  const tierKws = (r.keyword_map || []).filter(k => k.tier === tier);
+                  if (!tierKws.length) return null;
+                  const tierColor = tier === "dealbreaker" ? DANGER : tier === "strong_signal" ? WARNING : tier === "bonus" ? ACCENT : MUTED;
+                  return (
+                    <div key={tier} style={{ marginBottom: "12px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: tierColor, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "6px" }}>{tier.replace(/_/g, " ")}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                        {tierKws.map((kw, ki) => (
+                          <span key={ki} style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "4px", background: `${tierColor}15`, color: tierColor, fontWeight: 500 }}>
+                            {kw.term} <span style={{ opacity: 0.6 }}>×{kw.frequency_target}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
 
           {/* Voice Print */}
           {r.voice_print && (
