@@ -568,7 +568,6 @@ export default function GhostResumeApp() {
 
           <div style={{ borderBottom: `1px solid ${BORDER}`, marginBottom: "24px", display: "flex", gap: "4px", flexWrap: "wrap" }}>
             <TabButton active={activeTab === "resume"} onClick={() => setActiveTab("resume")}><FileText size={14} style={{marginRight:6,verticalAlign:"middle"}} />Resume</TabButton>
-            <TabButton active={activeTab === "ghost"} onClick={() => setActiveTab("ghost")}><Ghost size={14} style={{marginRight:6,verticalAlign:"middle"}} />Ghost Resume</TabButton>
             <TabButton active={activeTab === "cover"} onClick={() => setActiveTab("cover")}><MessageSquare size={14} style={{marginRight:6,verticalAlign:"middle"}} />Cover Letter</TabButton>
             <TabButton active={activeTab === "interview"} onClick={() => setActiveTab("interview")}><BookOpen size={14} style={{marginRight:6,verticalAlign:"middle"}} />Interview Prep</TabButton>
             <TabButton active={activeTab === "gaps"} onClick={() => setActiveTab("gaps")}><Target size={14} style={{marginRight:6,verticalAlign:"middle"}} />Gap Report</TabButton>
@@ -638,33 +637,6 @@ export default function GhostResumeApp() {
                 </div>)}
               </div>
             </div>);})()}
-
-            {/* GHOST RESUME TAB */}
-            {activeTab === "ghost" && r.ghost_resume && (<div>
-              <div style={{ background: "rgba(192,132,252,0.06)", border: "1px solid rgba(192,132,252,0.15)", borderRadius: "8px", padding: "14px", marginBottom: "16px" }}>
-                <p style={{ fontSize: "13px", fontWeight: 600, color: "#c084fc", margin: "0 0 4px" }}>This is the fictional ideal candidate</p>
-                <p style={{ fontSize: "12px", color: MUTED, margin: 0, lineHeight: 1.5 }}>
-                  This resume doesn't represent a real person — it's what the perfect applicant would look like for this specific role. Your tailored resume was built by mapping your real experience onto this blueprint.
-                </p>
-              </div>
-              <div style={{ background: BG, borderRadius: "8px", padding: "24px", border: "1px solid rgba(192,132,252,0.2)" }}>
-                <p style={{ fontSize: "14px", lineHeight: 1.7, color: TEXT, margin: "0 0 20px", fontStyle: "italic" }}>{r.ghost_resume.summary}</p>
-                {(r.ghost_resume.sections || []).map((sec, si) => (<div key={si} style={{ marginBottom: "20px" }}>
-                  <h3 style={{ fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: "#c084fc", borderBottom: "1px solid rgba(192,132,252,0.2)", paddingBottom: "6px", marginBottom: "12px" }}>{sec.name}</h3>
-                  {(sec.entries || []).map((en, ei) => (<div key={ei} style={{ marginBottom: "16px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "4px", flexWrap: "wrap", gap: "8px" }}>
-                      <span style={{ fontSize: "14px", fontWeight: 600 }}>{en.title}{en.company ? ` — ${en.company}` : ""}</span>
-                      <span style={{ fontSize: "12px", color: MUTED }}>{en.dates}</span>
-                    </div>
-                    {(en.bullets || []).map((b, bi) => (<div key={bi} style={{ display: "flex", gap: "8px", marginBottom: "4px", fontSize: "13px", color: "#c4c4cc", lineHeight: 1.6 }}><span style={{ color: "#c084fc", flexShrink: 0 }}>•</span><span>{b}</span></div>))}
-                  </div>))}
-                </div>))}
-                {r.ghost_resume.skills && (<div>
-                  <h3 style={{ fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: "#c084fc", borderBottom: "1px solid rgba(192,132,252,0.2)", paddingBottom: "6px", marginBottom: "10px" }}>Ideal Skills</h3>
-                  <p style={{ fontSize: "13px", color: "#c4c4cc", lineHeight: 1.8 }}>{(r.ghost_resume.skills || []).join("  ·  ")}</p>
-                </div>)}
-              </div>
-            </div>)}
 
             {activeTab === "cover" && r.cover_letter && (<div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "16px" }}>
