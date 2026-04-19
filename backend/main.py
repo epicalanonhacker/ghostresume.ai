@@ -284,6 +284,7 @@ async def run_pipeline(request: PipelineRequest):
         "- TECH STACK CORRECTION: If resume lists wrong tech (e.g. 'Swift' for a Flutter app), CORRECT IT.\n"
         "- EDUCATION IS MANDATORY: Always include education with degrees, institutions, dates.\n"
         "- CONTACT IS MANDATORY: The contact field MUST be populated.\n"
+        "- PROFESSIONAL TITLE: The tailored_resume.professional_title MUST be set to the exact role title from the job posting (e.g. 'Client Support Associate', 'Senior Flutter Developer'). This appears directly below the candidate's name on the resume. It signals to ATS and recruiters that the resume was written for THIS role.\n"
         + voice_consistency + "\n\n"
         """COVER LETTER HOOK PHILOSOPHY:
 The hook must be COMPANY-SITUATION-CENTRIC, not candidate-centric.
@@ -351,11 +352,13 @@ Respond ONLY with valid JSON (no markdown fences):
     "education": [{"institution": "string", "degree": "string", "dates": "string"}]
   },
   "ghost_resume": {
+    "professional_title": "string (the role title from the job posting, e.g. 'Senior Flutter Developer' or 'Client Support Associate')",
     "summary": "string (ideal candidate summary — ATS-native with Dealbreaker keywords in sentence 1)",
     "sections": [{"name": "string", "entries": [{"title": "string", "company": "string", "dates": "string", "bullets": ["string (CAR method, keyword embedded in clause, specific metric)"]}]}],
     "skills": ["string (ordered: dealbreakers first, strong signals second, bonus last)"]
   },
   "tailored_resume": {
+    "professional_title": "string (the role title from the job posting — displayed prominently below the candidate's name)",
     "summary": "string",
     "sections": [{"name": "string", "entries": [{"title": "string", "company": "string", "dates": "string", "bullets": ["string"]}]}],
     "skills": ["string"],
@@ -711,6 +714,16 @@ def _build_resume_docx(data: dict, contact: dict, filepath: str):
         nr.font.color.rgb = RGBColor(0x1a, 0x1a, 0x1a)
         np.space_after = Pt(2)
 
+    # Professional title
+    prof_title = data.get("professional_title", "")
+    if prof_title:
+        tp = doc.add_paragraph()
+        tp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        tr = tp.add_run(prof_title)
+        tr.font.size = Pt(11)
+        tr.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
+        tp.space_after = Pt(2)
+
     # Contact line
     contact_parts = [contact.get(k) for k in ["location", "phone", "email", "linkedin"] if contact.get(k)]
     if contact_parts:
@@ -812,6 +825,7 @@ def _build_resume_pdf(data: dict, contact: dict, filepath: str):
                             leftMargin=0.65*inch, rightMargin=0.65*inch)
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name='ResName', fontName='Helvetica-Bold', fontSize=16, alignment=1, spaceAfter=2, textColor=HexColor('#1a1a1a')))
+    styles.add(ParagraphStyle(name='ResProTitle', fontName='Helvetica', fontSize=11, alignment=1, spaceAfter=2, textColor=HexColor('#444444')))
     styles.add(ParagraphStyle(name='ResCont', fontName='Helvetica', fontSize=8.5, alignment=1, spaceAfter=4, textColor=HexColor('#666666')))
     styles.add(ParagraphStyle(name='SHead', fontName='Helvetica-Bold', fontSize=10, spaceBefore=10, spaceAfter=3, textColor=HexColor('#1a1a1a')))
     styles.add(ParagraphStyle(name='EntryTitle', fontName='Helvetica-Bold', fontSize=10, spaceAfter=1, textColor=HexColor('#333333')))
@@ -827,6 +841,9 @@ def _build_resume_pdf(data: dict, contact: dict, filepath: str):
     # Contact header
     if contact.get("name"):
         story.append(Paragraph(contact["name"], styles['ResName']))
+    prof_title = data.get("professional_title", "")
+    if prof_title:
+        story.append(Paragraph(prof_title, styles['ResProTitle']))
     contact_parts = [contact.get(k) for k in ["location", "phone", "email", "linkedin"] if contact.get(k)]
     if contact_parts:
         story.append(Paragraph(" | ".join(contact_parts), styles['ResCont']))

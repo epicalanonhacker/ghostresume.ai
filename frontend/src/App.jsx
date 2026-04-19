@@ -150,7 +150,14 @@ async function apiQuestionnaireContinue(gap, role, company, conversation, questi
 
 function fmtResume(r) {
   const res = r.tailored_resume; if (!res) return "";
+  const c = r.contact || {};
   const L = [];
+  // Contact header
+  if (c.name) L.push(c.name);
+  if (res.professional_title) L.push(res.professional_title);
+  const contactLine = [c.location, c.phone, c.email, c.linkedin].filter(Boolean).join("  |  ");
+  if (contactLine) L.push(contactLine);
+  L.push("");
   L.push("═".repeat(60));
   L.push("PROFESSIONAL SUMMARY");
   L.push("═".repeat(60));
@@ -171,6 +178,13 @@ function fmtResume(r) {
   if (res.skills?.length) {
     L.push("═".repeat(60)); L.push("SKILLS"); L.push("═".repeat(60));
     L.push(res.skills.join("  |  "));
+    L.push("");
+  }
+  if (res.education?.length) {
+    L.push("═".repeat(60)); L.push("EDUCATION"); L.push("═".repeat(60));
+    for (const edu of res.education) {
+      L.push(`${edu.degree || ""} — ${edu.institution || ""}  |  ${edu.dates || ""}`);
+    }
   }
   return L.join("\n");
 }
@@ -682,6 +696,18 @@ export default function GhostResumeApp() {
                 )}
               </div>
               <div style={{ background: BG, borderRadius: "8px", padding: "24px", border: `1px solid ${BORDER}` }}>
+                {/* Resume header */}
+                {r.contact && r.contact.name && (
+                  <div style={{ textAlign: "center", marginBottom: "16px", paddingBottom: "12px", borderBottom: `1px solid ${BORDER}` }}>
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: TEXT, marginBottom: "4px" }}>{r.contact.name}</div>
+                    {enriched.professional_title && (
+                      <div style={{ fontSize: "13px", color: MUTED, marginBottom: "6px" }}>{enriched.professional_title}</div>
+                    )}
+                    <div style={{ fontSize: "11px", color: MUTED }}>
+                      {[r.contact.location, r.contact.phone, r.contact.email, r.contact.linkedin].filter(Boolean).join("  |  ")}
+                    </div>
+                  </div>
+                )}
                 <p style={{ fontSize: "14px", lineHeight: 1.7, color: TEXT, margin: "0 0 20px", fontStyle: "italic" }}>{enriched.summary}</p>
                 {(enriched.sections || []).map((sec, si) => (<div key={si} style={{ marginBottom: "20px" }}>
                   <h3 style={{ fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: ACCENT, borderBottom: `1px solid ${BORDER}`, paddingBottom: "6px", marginBottom: "12px" }}>{sec.name}</h3>
@@ -732,6 +758,11 @@ export default function GhostResumeApp() {
                 </p>
               </div>
               <div style={{ background: BG, borderRadius: "8px", padding: "24px", border: "1px solid rgba(192,132,252,0.2)" }}>
+                {r.ghost_resume.professional_title && (
+                  <div style={{ textAlign: "center", marginBottom: "16px", paddingBottom: "12px", borderBottom: "1px solid rgba(192,132,252,0.15)" }}>
+                    <div style={{ fontSize: "18px", fontWeight: 700, color: "#c084fc", marginBottom: "4px" }}>The Ideal {r.ghost_resume.professional_title}</div>
+                  </div>
+                )}
                 <p style={{ fontSize: "14px", lineHeight: 1.7, color: TEXT, margin: "0 0 20px", fontStyle: "italic" }}>{r.ghost_resume.summary}</p>
                 {(r.ghost_resume.sections || []).map((sec, si) => (<div key={si} style={{ marginBottom: "20px" }}>
                   <h3 style={{ fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: "#c084fc", borderBottom: "1px solid rgba(192,132,252,0.2)", paddingBottom: "6px", marginBottom: "12px" }}>{sec.name}</h3>
