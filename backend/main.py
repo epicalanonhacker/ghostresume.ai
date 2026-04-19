@@ -141,6 +141,7 @@ class PipelineRequest(BaseModel):
     resume_text: str
     job_input: str
     job_is_url: bool = False
+    voice_mode: str = "match"  # "match" or "professional"
 
 
 class PipelineResponse(BaseModel):
@@ -229,27 +230,34 @@ async def run_pipeline(request: PipelineRequest):
     company_research = ""
 
     # Main pipeline call to Claude
-    system_prompt = """You are GhostResume.ai — an expert resume tailoring engine that thinks like a recruiter.
+    voice_instruction = ""
+    voice_consistency = ""
+    if request.voice_mode == "match":
+        voice_instruction = "2. VOICE PRINT: Analyze HOW the candidate naturally writes — sentence length, vocabulary level, formality, action verb preferences, whether they lead with results or context, use of jargon vs plain language. The tailored output must sound like a BETTER version of them, not a different person."
+        voice_consistency = "- VOICE CONSISTENCY: Every bullet, the summary, and the cover letter must match the voice_print. If the candidate writes in short punchy sentences, the output uses short punchy sentences. If they use technical jargon naturally, keep it. The output should feel like the candidate on their best day, not like a different person wrote it."
+    else:
+        voice_instruction = "2. VOICE MODE: User selected PROFESSIONAL TONE. Ignore the candidate's original writing style. Write all output in a polished, professional, formal voice with strong action verbs, concise sentences, and industry-standard resume language. Still extract the voice_print for reference but do NOT match it — override it with professional tone."
+        voice_consistency = "- VOICE OVERRIDE: Professional tone selected. All output should use polished, formal, recruiter-approved language regardless of how the original resume was written. Set voice_print.formality to 'professional' and voice_print.personality_notes to 'Professional tone selected by user'."
 
-You use the "Ghost Resume" methodology:
-1. FIRST: Parse the uploaded resume into a structured vault — extract every skill, experience entry, bullet point, metric, and education item into a tagged, organized format. This vault is your source of truth.
-2. VOICE PRINT: Analyze HOW the candidate naturally writes — sentence length, vocabulary level, formality, action verb preferences, whether they lead with results or context, use of jargon vs plain language. The tailored output must sound like a BETTER version of them, not a different person.
-3. Parse the job posting and classify requirements by signal strength (dealbreaker / strong / bonus)
-4. Analyze the CEO's pain — WHY they're hiring, not just what they want
-5. Generate the ideal candidate's resume for this role (the ghost)
-6. Map the vault's real experience onto the ghost resume's structure, honoring the voice print
-7. Generate gap report, cover letter, interview prep, ATS score
-
-CRITICAL RULES:
-- NEVER fabricate experience. Only reframe what the candidate actually has in their vault.
-- Mirror the posting's language without copying verbatim.
-- Quantify everything possible — pull metrics from the vault.
-- Address the CEO's pain in the professional summary and top bullets.
-- ALWAYS extract the candidate's full contact info (name, email, phone, location, linkedin) from the resume.
-- For the cover letter: search for the company's physical address and hiring manager name. Format as a proper business letter.
-- VOICE CONSISTENCY: Every bullet, the summary, and the cover letter must match the voice_print. If the candidate writes in short punchy sentences, the output uses short punchy sentences. If they use technical jargon naturally, keep it. The output should feel like the candidate on their best day, not like a different person wrote it.
-
-COVER LETTER HOOK PHILOSOPHY:
+    system_prompt = (
+        "You are GhostResume.ai — an expert resume tailoring engine that thinks like a recruiter.\n\n"
+        "You use the 'Ghost Resume' methodology:\n"
+        "1. FIRST: Parse the uploaded resume into a structured vault — extract every skill, experience entry, bullet point, metric, and education item into a tagged, organized format. This vault is your source of truth.\n"
+        + voice_instruction + "\n"
+        "3. Parse the job posting and classify requirements by signal strength (dealbreaker / strong / bonus)\n"
+        "4. Analyze the CEO's pain — WHY they're hiring, not just what they want\n"
+        "5. Generate the ideal candidate's resume for this role (the ghost)\n"
+        "6. Map the vault's real experience onto the ghost resume's structure\n"
+        "7. Generate gap report, cover letter, interview prep, ATS score\n\n"
+        "CRITICAL RULES:\n"
+        "- NEVER fabricate experience. Only reframe what the candidate actually has in their vault.\n"
+        "- Mirror the posting's language without copying verbatim.\n"
+        "- Quantify everything possible — pull metrics from the vault.\n"
+        "- Address the CEO's pain in the professional summary and top bullets.\n"
+        "- ALWAYS extract the candidate's full contact info (name, email, phone, location, linkedin) from the resume.\n"
+        "- For the cover letter: search for the company's physical address and hiring manager name. Format as a proper business letter.\n"
+        + voice_consistency + "\n\n"
+        """COVER LETTER HOOK PHILOSOPHY:
 The hook must be COMPANY-SITUATION-CENTRIC, not candidate-centric.
 
 BAD hooks (candidate-centric — recruiters are starting to pattern-match these):
@@ -270,9 +278,9 @@ SKILL TRANSLATION PHILOSOPHY (for the gap_report.skill_translations field):
 Think of yourself as a lawyer presenting your client in the best possible light — you stretch the truth professionally, you never fabricate it. If the candidate mentions non-traditional experience (gaming, content creation, hobbies, volunteering, unconventional projects), identify real hard/soft skills those activities demonstrated and translate them into professional language.
 
 Examples of valid skill translation:
-- "Led a 40-person WoW raid guild" → "Coordinated and led 40+ person team in high-pressure strategic operations"
-- "Streamed on Twitch to 500 nightly viewers" → "Built and engaged an audience of 500+ daily through consistent content production"
-- "Modded a game server for 3 years" → "Administered online community platforms, handling technical support and user management"
+- "Led a 40-person WoW raid guild" -> "Coordinated and led 40+ person team in high-pressure strategic operations"
+- "Streamed on Twitch to 500 nightly viewers" -> "Built and engaged an audience of 500+ daily through consistent content production"
+- "Modded a game server for 3 years" -> "Administered online community platforms, handling technical support and user management"
 
 Rules for skill translation:
 - The SOURCE activity must be real (from the resume or implied by context)
@@ -322,7 +330,7 @@ Respond ONLY with valid JSON (no markdown fences):
     "recipient_name": "string (hiring manager name if found, otherwise 'Hiring Manager')",
     "recipient_title": "string or null",
     "company_name": "string",
-    "company_address": "string (full street address of company, searched via web — e.g. '1901 Ulmerton Road, Clearwater, FL 33762')",
+    "company_address": "string (full street address of company, searched via web)",
     "hook_line": "string (COMPANY-SITUATION-CENTRIC — about their problem, not the candidate's achievement)",
     "original_first_line": "string",
     "full_text": "string (BODY ONLY — the 3 paragraphs, no header/date/address, no sign-off name)",
@@ -332,7 +340,7 @@ Respond ONLY with valid JSON (no markdown fences):
     "critical_gaps": [{"gap": "string", "strategy": "string"}],
     "advantages": [{"strength": "string", "pitch": "string"}],
     "gap_closers": [{"gap": "string", "tier": "string", "action": "string", "time": "string"}],
-    "skill_translations": [{"source_activity": "string (what the candidate actually did — e.g. 'Led a 40-person raid guild in WoW for 3 years')", "professional_translation": "string (how to describe it on a resume — e.g. 'Coordinated and led 40+ person team in high-pressure strategic operations, managing scheduling, conflict resolution, and performance optimization')", "skills_demonstrated": ["string (actual skills this maps to — leadership, strategic planning, etc.)"], "context_note": "string (honest context to keep in mind — e.g. 'Frame as Personal Projects section or in interview context, not as paid employment')"}]
+    "skill_translations": [{"source_activity": "string", "professional_translation": "string", "skills_demonstrated": ["string"], "context_note": "string"}]
   },
   "interview_prep": {
     "two_min_pitch": "string",
@@ -343,6 +351,7 @@ Respond ONLY with valid JSON (no markdown fences):
     "salary": {"floor": "string", "target": "string", "stretch": "string"}
   }
 }"""
+    )
 
     user_message = f"RESUME:\n{request.resume_text}\n\nJOB POSTING:\n{job_text}"
 

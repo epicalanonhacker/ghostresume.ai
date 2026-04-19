@@ -76,11 +76,11 @@ async function uploadResume(file) {
   return res.json();
 }
 
-async function runBackendPipeline(resumeText, jobInput, jobIsUrl) {
+async function runBackendPipeline(resumeText, jobInput, jobIsUrl, voiceMode) {
   const res = await fetch(`${API_BASE}/api/run-pipeline`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resume_text: resumeText, job_input: jobInput, job_is_url: jobIsUrl }),
+    body: JSON.stringify({ resume_text: resumeText, job_input: jobInput, job_is_url: jobIsUrl, voice_mode: voiceMode || "match" }),
   });
   if (!res.ok) { const err = await res.json(); throw new Error(err.detail || "Pipeline failed"); }
   return res.json();
@@ -202,6 +202,7 @@ export default function GhostResumeApp() {
   const [resumeFileName, setResumeFileName] = useState("");
   const [resumeFile, setResumeFile] = useState(null);
   const [uploadFormat, setUploadFormat] = useState("txt");
+  const [voiceMode, setVoiceMode] = useState("match"); // "match" or "professional"
   const [jobUrl, setJobUrl] = useState("");
   const [jobText, setJobText] = useState("");
   const [currentStep, setCurrentStep] = useState(0);
@@ -255,7 +256,7 @@ export default function GhostResumeApp() {
       }
 
       const jobInput = hasUrl ? jobUrl.trim() : jobText.trim();
-      const parsed = await runBackendPipeline(txt, jobInput, hasUrl);
+      const parsed = await runBackendPipeline(txt, jobInput, hasUrl, voiceMode);
 
       clearInterval(si); clearInterval(ti);
       setResults(parsed); setCurrentStep(PIPELINE_STEPS.length);
@@ -350,6 +351,31 @@ export default function GhostResumeApp() {
                 style={{ width: "100%", minHeight: "160px", marginTop: "8px", padding: "14px", background: CARD, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT, fontFamily: "'Space Mono', monospace", fontSize: "12px", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
             </details>
           )}
+        </div>
+
+        {/* Voice Mode Toggle */}
+        <div style={{ marginBottom: "24px" }}>
+          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: MUTED, marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1px" }}>Writing Style</label>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button onClick={() => setVoiceMode("match")} style={{
+              flex: 1, padding: "12px 16px", border: `1px solid ${voiceMode === "match" ? "#c084fc" : BORDER}`,
+              borderRadius: "8px", cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+              background: voiceMode === "match" ? "rgba(192,132,252,0.1)" : CARD,
+              transition: "all 0.2s", textAlign: "left",
+            }}>
+              <div style={{ fontSize: "13px", fontWeight: 600, color: voiceMode === "match" ? "#c084fc" : TEXT, marginBottom: "2px" }}>Match My Voice</div>
+              <div style={{ fontSize: "11px", color: MUTED, lineHeight: 1.4 }}>Output sounds like you wrote it — preserves your natural tone and style</div>
+            </button>
+            <button onClick={() => setVoiceMode("professional")} style={{
+              flex: 1, padding: "12px 16px", border: `1px solid ${voiceMode === "professional" ? ACCENT : BORDER}`,
+              borderRadius: "8px", cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+              background: voiceMode === "professional" ? ACCENT_DIM : CARD,
+              transition: "all 0.2s", textAlign: "left",
+            }}>
+              <div style={{ fontSize: "13px", fontWeight: 600, color: voiceMode === "professional" ? ACCENT : TEXT, marginBottom: "2px" }}>Professional Tone</div>
+              <div style={{ fontSize: "11px", color: MUTED, lineHeight: 1.4 }}>Polished, formal output regardless of how your current resume reads</div>
+            </button>
+          </div>
         </div>
 
         {/* Job URL */}
@@ -512,7 +538,14 @@ export default function GhostResumeApp() {
           {/* Voice Print */}
           {r.voice_print && (
             <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "16px 20px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-              <div style={{ fontSize: "12px", fontWeight: 600, color: "#c084fc", textTransform: "uppercase", letterSpacing: "1px", flexShrink: 0 }}>Voice Print</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: voiceMode === "professional" ? ACCENT : "#c084fc", textTransform: "uppercase", letterSpacing: "1px" }}>
+                  {voiceMode === "professional" ? "Professional Tone" : "Voice Print"}
+                </div>
+                <span style={{ fontSize: "10px", padding: "2px 6px", borderRadius: "4px", background: voiceMode === "professional" ? ACCENT_DIM : "rgba(192,132,252,0.1)", color: voiceMode === "professional" ? ACCENT : "#c084fc" }}>
+                  {voiceMode === "professional" ? "OVERRIDE" : "MATCHED"}
+                </span>
+              </div>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 {[
                   { label: r.voice_print.sentence_style, icon: "✏️" },
@@ -520,7 +553,7 @@ export default function GhostResumeApp() {
                   { label: r.voice_print.vocabulary_level, icon: "📚" },
                   { label: `leads with ${r.voice_print.leads_with}`, icon: "→" },
                 ].map((v, i) => (
-                  <span key={i} style={{ fontSize: "11px", padding: "4px 10px", borderRadius: "20px", background: "rgba(192,132,252,0.1)", color: "#c084fc", fontWeight: 500 }}>
+                  <span key={i} style={{ fontSize: "11px", padding: "4px 10px", borderRadius: "20px", background: voiceMode === "professional" ? ACCENT_DIM : "rgba(192,132,252,0.1)", color: voiceMode === "professional" ? ACCENT : "#c084fc", fontWeight: 500 }}>
                     {v.icon} {v.label}
                   </span>
                 ))}
