@@ -324,6 +324,11 @@ Respond ONLY with valid JSON (no markdown fences):
     "experience": [{"company": "string", "role": "string", "dates": "string", "bullets": [{"text": "string", "tags": ["string"], "metrics": "string or null"}]}],
     "education": [{"institution": "string", "degree": "string", "dates": "string"}]
   },
+  "ghost_resume": {
+    "summary": "string (the IDEAL candidate's professional summary for this role — fictional, not the real candidate)",
+    "sections": [{"name": "string", "entries": [{"title": "string", "company": "string (fictional company type, e.g. 'Series B SaaS Startup')", "dates": "string", "bullets": ["string (ideal bullet with ideal metrics)"]}]}],
+    "skills": ["string (ideal skill set ordered by posting priority)"]
+  },
   "tailored_resume": {
     "summary": "string",
     "sections": [{"name": "string", "entries": [{"title": "string", "company": "string", "dates": "string", "bullets": ["string"]}]}],
