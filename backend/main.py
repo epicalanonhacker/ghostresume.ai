@@ -3,6 +3,7 @@ GhostResume.ai — FastAPI Backend
 Production API that wraps the resume bot pipeline.
 """
 import os
+import re
 import json
 import uuid
 import tempfile
@@ -217,7 +218,6 @@ async def run_pipeline(request: PipelineRequest):
                 resp = await client.get(request.job_input, headers={
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
                 })
-                import re
                 text = re.sub(r'<script[^>]*>.*?</script>', '', resp.text, flags=re.DOTALL)
                 text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
                 text = re.sub(r'<[^>]+>', ' ', text)
@@ -256,6 +256,10 @@ async def run_pipeline(request: PipelineRequest):
         "- Address the CEO's pain in the professional summary and top bullets.\n"
         "- ALWAYS extract the candidate's full contact info (name, email, phone, location, linkedin) from the resume.\n"
         "- For the cover letter: search for the company's physical address and hiring manager name. Format as a proper business letter.\n"
+        "- TECH STACK CORRECTION: If the resume lists technologies that contradict the actual work described (e.g. says 'Swift/Kotlin' but describes building a Flutter/Dart app), CORRECT IT in the vault and tailored output. The vault must reflect what was actually used, not what the resume mistakenly says. Cross-reference the work described against the tech listed.\n"
+        "- EDUCATION IS MANDATORY: The tailored_resume MUST always include the education field with all degrees, institutions, and dates from the resume. NEVER omit education — ATS systems filter resumes without it.\n"
+        "- SKILLS MUST INCLUDE HARD SKILLS: The skills array must contain SPECIFIC tools, technologies, platforms, and systems mentioned in the job posting — not just soft skill phrases. Extract every named tool/platform/system from the posting (CRM software, ticketing systems, programming languages, specific platforms) and include the ones the candidate has or can honestly claim. Soft skills can be included but must NOT be the majority. Aim for 60%+ hard/technical skills and max 40% soft skills.\n"
+        "- CONTACT IN TAILORED RESUME: The contact field at the top level of the JSON response MUST be populated with name, email, phone, location from the resume. This is critical — documents cannot be generated without it.\n"
         + voice_consistency + "\n\n"
         """COVER LETTER HOOK PHILOSOPHY:
 The hook must be COMPANY-SITUATION-CENTRIC, not candidate-centric.
@@ -360,6 +364,55 @@ Respond ONLY with valid JSON (no markdown fences):
         result = parse_json_response(raw)
     except Exception as e:
         raise HTTPException(500, f"Pipeline error: {str(e)}")
+
+    # ---- POST-PROCESSING VALIDATION ----
+    # Ensure contact exists
+    if not result.get("contact") or not result.get("contact", {}).get("name"):
+        # Try to extract basic contact from resume text
+        lines = request.resume_text.strip().split("\n")
+        fallback_contact = {"name": "", "email": "", "phone": "", "location": "", "linkedin": ""}
+        for line in lines[:10]:  # Contact info is usually in first 10 lines
+            line = line.strip()
+            if "@" in line and "." in line and not fallback_contact["email"]:
+                # Likely email
+                # re already imported at top
+                email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.]+', line)
+                if email_match:
+                    fallback_contact["email"] = email_match.group()
+            if re.search(r'\d{3}[\s.-]?\d{3}[\s.-]?\d{4}', line) and not fallback_contact["phone"]:
+                phone_match = re.search(r'[\d\s.()+\-]{10,}', line)
+                if phone_match:
+                    fallback_contact["phone"] = phone_match.group().strip()
+        if not fallback_contact["name"] and lines:
+            # First non-empty line is usually the name
+            for line in lines[:5]:
+                clean = line.strip()
+                if clean and len(clean) < 60 and "@" not in clean and not any(c.isdigit() for c in clean[:3]):
+                    fallback_contact["name"] = clean
+                    break
+        if not result.get("contact"):
+            result["contact"] = fallback_contact
+        else:
+            for k, v in fallback_contact.items():
+                if v and not result["contact"].get(k):
+                    result["contact"][k] = v
+
+    # Ensure education exists in tailored_resume
+    tr = result.get("tailored_resume", {})
+    if not tr.get("education") or len(tr.get("education", [])) == 0:
+        vault_edu = result.get("vault", {}).get("education", [])
+        if vault_edu:
+            tr["education"] = vault_edu
+            result["tailored_resume"] = tr
+
+    # Ensure skills has hard skills (warn if all soft)
+    skills = tr.get("skills", [])
+    soft_indicators = ["management", "collaboration", "communication", "leadership", "teamwork",
+                       "problem-solving", "adaptability", "proactive", "customer service", "engagement"]
+    if skills:
+        soft_count = sum(1 for s in skills if any(ind in s.lower() for ind in soft_indicators))
+        if soft_count > len(skills) * 0.6:
+            result["_warning_soft_skills"] = True
 
     # Save session
     session_path = OUTPUT_DIR / f"{session_id}.json"
@@ -906,8 +959,11 @@ async def generate_document(request: DocumentRequest):
     filename = f"{prefix}_{safe_company}_{safe_role}.{ext}"
     filepath = OUTPUT_DIR / filename
 
-    # Extract contact from the top-level results if provided
+    # Extract contact — try _contact first, then look for contact in data
     contact = request.data.get("_contact", {})
+    if not contact or not contact.get("name"):
+        # Fallback: try top-level contact field
+        contact = request.data.get("contact", contact or {})
 
     try:
         if request.type == "resume":

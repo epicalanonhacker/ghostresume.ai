@@ -625,6 +625,16 @@ export default function GhostResumeApp() {
                     })}
                   </p>
                 </div>)}
+                {enriched.education && enriched.education.length > 0 && (<div style={{ marginTop: "16px" }}>
+                  <h3 style={{ fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: ACCENT, borderBottom: `1px solid ${BORDER}`, paddingBottom: "6px", marginBottom: "10px" }}>Education</h3>
+                  {enriched.education.map((edu, edi) => (
+                    <div key={edi} style={{ marginBottom: "6px" }}>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: TEXT }}>{edu.degree || ""}</span>
+                      <span style={{ fontSize: "13px", color: "#c4c4cc" }}> — {edu.institution || ""}</span>
+                      {edu.dates && <span style={{ fontSize: "12px", color: MUTED, marginLeft: "8px" }}>{edu.dates}</span>}
+                    </div>
+                  ))}
+                </div>)}
               </div>
             </div>);})()}
 
